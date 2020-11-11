@@ -1,5 +1,5 @@
 # CSV files
-.csv
+*.csv
 
 # Mac OSX hidden doc
-.DS_Store
+*.DS_Store
