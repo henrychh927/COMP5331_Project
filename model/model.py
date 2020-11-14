@@ -3,8 +3,8 @@
 # %%
 k = 30
 l = 5
-numBatches = 128
-numStocksInSubset = 11
+numBatches = 3#128
+numStocksInSubset = 2#11
 numEpisodes = 1
 tranCostRate = 0.0025
 
@@ -88,32 +88,39 @@ inflations # percentage change from period i to (i+1)
 
 
 # %%
-def getTotalReward(ys, actions):
-    reward = 0
-    n = len(actions)
+def getTotalLosses(ys, actions):
+    assert actions.shape == (numBatches, numDates-k-1, numStocksInSubset)
+    assert ys.shape == actions.shape
 
-    assert len(ys) == n
-    assert len(actions[0]) == numStocksInSubset
-    assert len(ys) == numStocksInSubset
+    losses = []
 
-    originalWeights = actions
-    inflatedWeights = []
-    updatedWeights = [np.zeros(len(actions[0]))]
-    for index, currWeights in enumerate(actions):
-        inflatedWeights.append(currWeights * ys[index])
-        updatedWeights.append(inflatedWeights[-1] / (currWeights @ ys[index]))
+    for subsetYs, subsetActions in zip(ys, actions):
+        reward = 0
 
-    for index in range(n):
-        tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
-        reward += np.log(inflatedWeights[index] * (1 - tranCost))
+        originalWeights = subsetActions
+        inflatedWeights = []
+        updatedWeights = [np.zeros(len(subsetActions[0]))]
+        for index, currWeights in enumerate(subsetActions):
+            inflatedWeights.append(currWeights * subsetYs[index])
+            updatedWeights.append(inflatedWeights[-1] / (currWeights @ subsetYs[index]))
+
+        for index in range(numDates-k-1):
+            tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
+            reward += torch.log(inflatedWeights[index] * (1 - tranCost))
+        
+        reward /= numDates-k-1
+
+        losses.append(-reward)
     
-    reward /= n
-
-    return reward
+    return torch.cat(losses).sum()
 
 
 # %%
 def runModel(modelInstance, encInput, decInput, prevAction):
+    assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
+    assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
+    assert prevAction.shape == (numBatches, numStocksInSubset)
+
     return modelInstance.forward(encInput, decInput, prevAction)
 
 
@@ -121,20 +128,22 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 modelInstance = RATransformer(1, k, 4, 12, 2, l)
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(numEpisodes):
-    randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)]
-    ys = [stockInflations[k:] for stockInflations in inflations[randomSubsets]] # shape: (numDates-1: T-1, numStocks: m)
-    actions = [np.zeros(4)]
-    for i in range(numDates - k):
-        print(i)
-        encInput = [[priceSeries[i:i+k] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+    randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+    ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    actions = [torch.zeros(size=(numBatches, numStocksInSubset))] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset)
+    for i in range(k, numDates - 1):
+        encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
-        decInput = [[priceSeries[i+k-l:i+k] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput, decInput, actions[-1]))
-    totalReward = getTotalReward(ys, actions)
+
+    actions = torch.stack(actions[1:]).permute([1, 0, 2]) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    ys = np.array(ys)
+    totalLosses = getTotalLosses(ys, actions)
 
     optimizer.zero_grad()
-    totalReward.backward()
+    totalLosses.backward()
     optimizer.step()
 
 
