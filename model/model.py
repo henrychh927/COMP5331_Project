@@ -126,9 +126,9 @@ for _ in range(numEpisodes):
     actions = [np.zeros(4)]
     for i in range(numDates - k):
         print(i)
-        encInput = [priceSeries[i:i+k] for priceSeries in entryArrays[randomSubsets]] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        encInput = [[priceSeries[i:i+k] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
-        decInput = [priceSeries[i+k-l:i+k] for priceSeries in entryArrays[randomSubsets]] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = [[priceSeries[i+k-l:i+k] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput, decInput, actions[-1]))
     totalReward = getTotalReward(ys, actions)
