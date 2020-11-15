@@ -132,7 +132,7 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 
 
 # %%
-modelInstance = RATransformer(1, k, 4, 12, 2, l)
+modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
