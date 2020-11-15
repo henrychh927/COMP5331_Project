@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import re
 
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
 
@@ -32,7 +34,7 @@ class RATransformer(nn.Module):
         
         for p in self.parameters():
             if p.dim() > 1:
-                nn.init.xavier_uniform(p)
+                nn.init.xavier_uniform_(p)
 
     
     def forward(self, enc_input, dec_input, previous, enc_mask=None, dec_mask=None):
@@ -177,7 +179,7 @@ def ContextAttention(x, context_length):
     # x: b, m, t, d_model
     
     b, m, t, d_model = x.size()
-    padding_x = torch.zeros((b, m, context_length-1, d_model)).cuda()
+    padding_x = torch.zeros((b, m, context_length-1, d_model))
     x = torch.cat([padding_x, x], 2)
     
     attn_weight = torch.matmul(x[:,:,context_length-1:,:], x.transpose(-2, -1))/ math.sqrt(d_model)   #  x: b, m, t, t
@@ -190,7 +192,7 @@ def ContextAttention(x, context_length):
     weight_x = torch.cat(weighted_x_list, 2)   # b, m, t, d_model
     
     return weight_x
-    
+
     
     
 def RelationAttentionLayer(x,  mask=None):
@@ -201,8 +203,6 @@ def RelationAttentionLayer(x,  mask=None):
         x, asset_weights = scaled_attention(x, x, x, mask) # x: b, t, h, m, d_f
         x = x.permute((3, 0, 1, 2, 4 ))  # x: b, m, t, h, d_f
         return x, asset_weights
-
-    
 
 
 class SublayerConnection(nn.Module):
@@ -262,6 +262,7 @@ class FeatureEmbeddingLayer(nn.Module):
         
     def forward(self, x):
         # x: b, m, t, d_feature
+        # print(x.size())
         b, m, t, d_feature = x.size()
          
         x = x.contiguous().view(b*m, t, d_feature)
@@ -270,7 +271,7 @@ class FeatureEmbeddingLayer(nn.Module):
         x = x.contiguous().view(b, m, t, self.d_model)
         return x
     
-  
+
 def LayerNorm(embedding_dim, eps=1e-6):
     m = nn.LayerNorm(embedding_dim, eps)
     return m

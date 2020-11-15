@@ -22,7 +22,7 @@ from transformer import RATransformer
 
 # %%
 df = pd.read_csv("whole_selected.csv")
-df
+print(df)
 
 
 # %%
@@ -38,7 +38,8 @@ for index, ticker in enumerate(tickers):
     tickersDict[ticker] = index
 
 df["Ticker"] = df["Ticker"].apply(lambda ticker: tickersDict[ticker])
-df
+print('df:')
+print(df)
 
 
 # %%
@@ -49,6 +50,7 @@ print("Number of valid dates: " + str(len(validDates)))
 
 
 # %%
+print('validDates[:100]')
 print(validDates[:100])
 validDates = validDates[5:]
 
@@ -66,18 +68,21 @@ for index, date in enumerate(dates):
     datesDict[date] = index
 
 df["Date"] = df["Date"].apply(lambda date: datesDict[date])
-df
+print('df:')
+print(df)
 
 
 # %%
 df = df.sort_values(by=["Ticker", "Date"])
-df
+print('df:')
+print(df)
 
 
 # %%
 entries = df[["Open", "High", "Low", "Close"]].to_numpy()
 entryArrays = entries.reshape((numTickers, numDates, 4)) # shape: (numStocks: m, numDates: T, numFeatures)
-entryArrays
+print('entryArrays:')
+print(entryArrays)
 
 
 # %%
@@ -124,6 +129,7 @@ def runModel(modelInstance, encInput, decInput, prevAction):
     return modelInstance.forward(encInput, decInput, prevAction)
 
 
+
 # %%
 modelInstance = RATransformer(1, k, 4, 12, 2, l)
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
@@ -131,14 +137,23 @@ for _ in range(numEpisodes):
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
     ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
     actions = [torch.zeros(size=(numBatches, numStocksInSubset))] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset)
+    print('action 0:', actions)
     for i in range(k, numDates - 1):
+        print('test 1')
         encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        print('test 2')
         encInput = torch.Tensor(encInput)
+        print('test 3')
         decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        print('test 4')
         decInput = torch.Tensor(decInput)
+        print('test 5')
         actions.append(runModel(modelInstance, encInput, decInput, actions[-1]))
+        print('test 6')
 
+    print('action 1:', actions)
     actions = torch.stack(actions[1:]).permute([1, 0, 2]) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    print('action 2:', actions)
     ys = np.array(ys)
     totalLosses = getTotalLosses(ys, actions)
 
@@ -146,7 +161,8 @@ for _ in range(numEpisodes):
     totalLosses.backward()
     optimizer.step()
 
-
+    
+print('done 5331')
 # %%
 
 
