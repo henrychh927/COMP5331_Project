@@ -5,8 +5,10 @@ k = 30
 l = 5
 numBatches = 128
 numStocksInSubset = 11
-numEpisodes = 1
+numTrainEpisodes = 1024
 tranCostRate = 0.0025
+
+numTestEpisodes = 256
 
 
 # %%
@@ -99,18 +101,23 @@ def getTotalLosses(ys, actions):
 
         originalWeights = subsetActions
         inflatedWeights = []
+        inflatedValues = []
         updatedWeights = [torch.zeros(len(subsetActions[0]))]
         for index, currWeights in enumerate(subsetActions):
             inflatedWeights.append(currWeights * subsetYs[index])
-            updatedWeights.append(inflatedWeights[-1] / (currWeights @ subsetYs[index]))
+            inflatedValues.append(inflatedWeights[-1].sum())
+            updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
         for index in range(numDates-k-1):
             tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
-            reward += torch.log(inflatedWeights[index] * (1 - tranCost))
+            reward += torch.log(inflatedValues[index] * (1 - tranCost))
         
         reward /= numDates-k-1
+        reward = reward.unsqueeze(0)
 
         losses.append(-reward)
+    
+    print(losses)
     
     return torch.cat(losses).sum()
 
@@ -120,14 +127,14 @@ def runModel(modelInstance, encInput, decInput, prevAction):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
     assert prevAction.shape == (numBatches, numStocksInSubset, 1)
-    # return torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)
+    # return torch.ones(size=(numBatches, numStocksInSubset), requires_grad=True).unsqueeze(-1)/numStocksInSubset
     return modelInstance.forward(encInput, decInput, prevAction)
 
 
 # %%
 modelInstance = RATransformer(1, k, 4, 12, 2, l)
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
-for _ in range(numEpisodes):
+for _ in range(int(numTrainEpisodes/numBatches)):
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
     ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
     actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset, 1)
@@ -145,6 +152,74 @@ for _ in range(numEpisodes):
     optimizer.zero_grad()
     totalLosses.backward()
     optimizer.step()
+
+
+# %%
+def evaluatePortfolios(ys, actions):
+    assert actions.shape == (numBatches, numDates-k-1, numStocksInSubset)
+    assert ys.shape == actions.shape
+
+    APVs = []
+    SRs = []
+    CRs = []
+
+    for subsetYs, subsetActions in zip(ys, actions):
+        originalWeights = subsetActions
+        inflatedWeights = []
+        inflatedValues = []
+        updatedWeights = [torch.zeros(len(subsetActions[0]))]
+        aggInflatedValues = [1]
+        for index, currWeights in enumerate(subsetActions):
+            inflatedWeights.append(currWeights * subsetYs[index])
+            inflatedValues.append(inflatedWeights[-1].sum())
+            updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
+
+        for index in range(numDates-k-1):
+            tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
+            aggInflatedValues.append(aggInflatedValues[-1] * inflatedValues[index] * (1 - tranCost))
+        aggInflatedValues = aggInflatedValues[1:]
+
+        APVs.append(aggInflatedValues[-1].item())
+        SRs.append((torch.mean(torch.Tensor(inflatedValues)-1) / torch.std(torch.Tensor(inflatedValues)-1)).item())
+
+        maxAggInflatedValueIndex = 0
+        minGainRatio = 1
+        for index in range(numDates-k-1):
+            if aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex] < minGainRatio:
+                minGainRatio = aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex]
+            if aggInflatedValues[index] > aggInflatedValues[maxAggInflatedValueIndex]:
+                maxAggInflatedValueIndex = index
+        CRs.append((aggInflatedValues[-1]/(1 - minGainRatio)).item())
+
+    return APVs, SRs, CRs
+
+
+# %%
+APVs = []
+SRs = []
+CRs = []
+
+for _ in range(int(numTestEpisodes/numBatches)):
+    randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+    ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset, 1)
+    for i in range(k, numDates - 1):
+        encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        encInput = torch.Tensor(encInput)
+        decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = torch.Tensor(decInput)
+        actions.append(runModel(modelInstance, encInput, decInput, actions[-1]))
+
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    ys = torch.Tensor(ys)
+    tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys, actions)
+    APVs += tempAPVs
+    SRs += tempSRs
+    CRs += tempCRs
+
+
+# %%
+CRs
 
 
 # %%
