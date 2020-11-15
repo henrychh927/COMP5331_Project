@@ -67,9 +67,9 @@ class DecisionLayer(nn.Module):
         
 
     def forward(self, x, previous):
-        # x: b, m, d_model
+        # x: b, m, context_len, d_model
         # previous: b, m, 1
-        x = x.squeeze(-2)
+        x = x[:,:,-1,:] # get the last day.  #x.squeeze(-2)
         x = torch.cat([x, previous], 2) # x: b, m, d_model+1
         a = F.softmax(self.initial_portfolio(x), 1) #  b, m, 1
         a_s = F.softmax(self.short_sale(x), 1) #  b, m, 1
