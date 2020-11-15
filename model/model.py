@@ -124,8 +124,8 @@ def getTotalLosses(ys, actions):
 def runModel(modelInstance, encInput, decInput, prevAction):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
-    assert prevAction.shape == (numBatches, numStocksInSubset)
-
+    assert prevAction.shape == (numBatches, numStocksInSubset, 1)
+    # return torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)
     return modelInstance.forward(encInput, decInput, prevAction)
 
 
@@ -136,7 +136,7 @@ optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(numEpisodes):
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
     ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
-    actions = [torch.zeros(size=(numBatches, numStocksInSubset))] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset)
+    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset)
     print('action 0:', actions)
     for i in range(k, numDates - 1):
         print('test 1')
@@ -152,7 +152,7 @@ for _ in range(numEpisodes):
         print('test 6')
 
     print('action 1:', actions)
-    actions = torch.stack(actions[1:]).permute([1, 0, 2]) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
     print('action 2:', actions)
     ys = np.array(ys)
     totalLosses = getTotalLosses(ys, actions)
