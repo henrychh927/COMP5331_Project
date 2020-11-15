@@ -129,9 +129,9 @@ class DecoderLayer(nn.Module):
         m = memory
         
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        print('in1', x.shape)
+        # print('in1', x.shape)
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask, relat_attn=False))
-        print('in2', x.shape)
+        # print('in2', x.shape)
         return self.sublayer[2](x, self.pw_ffn)
 
    
