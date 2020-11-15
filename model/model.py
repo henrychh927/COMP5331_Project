@@ -143,11 +143,11 @@ for _ in range(int(numTrainEpisodes/numBatches)):
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
-        actions.append(runModel(modelInstance, encInput, decInput, actions[-1]))
+        actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
     actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
     ys = torch.Tensor(ys)
-    totalLosses = getTotalLosses(ys, actions)
+    totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
 
     optimizer.zero_grad()
     totalLosses.backward()
