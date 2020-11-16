@@ -11,6 +11,7 @@ tranCostRate = 0.0025
 numTestEpisodes = 256
 
 
+
 # %%
 import pandas as pd
 import numpy as np
@@ -18,9 +19,11 @@ import random
 
 import torch
 import torch.optim as optim
+import os
 
 from transformer import RATransformer
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -102,7 +105,7 @@ def getTotalLosses(ys, actions):
         originalWeights = subsetActions
         inflatedWeights = []
         inflatedValues = []
-        updatedWeights = [torch.zeros(len(subsetActions[0]))]
+        updatedWeights = [torch.zeros(len(subsetActions[0])).cuda()]
         for index, currWeights in enumerate(subsetActions):
             inflatedWeights.append(currWeights * subsetYs[index])
             inflatedValues.append(inflatedWeights[-1].sum())
@@ -135,10 +138,12 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
+    print("interation" ,_)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
     ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
     actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset, 1)
     for i in range(k, numDates - 1):
+        print("fdf", i)
         encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
