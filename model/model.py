@@ -5,6 +5,7 @@ k = 30
 l = 5
 numBatches = 128
 numStocksInSubset = 11
+investmentLength = 100
 numTrainEpisodes = 1024
 tranCostRate = 0.0025
 
@@ -91,7 +92,7 @@ print(inflations) # percentage change from period i to (i+1)
 
 # %%
 def getTotalLosses(ys, actions):
-    assert actions.shape == (numBatches, numDates-k-1, numStocksInSubset)
+    assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
 
     losses = []
@@ -108,11 +109,11 @@ def getTotalLosses(ys, actions):
             inflatedValues.append(inflatedWeights[-1].sum())
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
-        for index in range(numDates-k-1):
+        for index in range(investmentLength):
             tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
             reward += torch.log(inflatedValues[index] * (1 - tranCost))
         
-        reward /= numDates-k-1
+        reward /= investmentLength
         reward = reward.unsqueeze(0)
 
         losses.append(-reward)
@@ -135,17 +136,20 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
+    randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
-    ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
-    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset, 1)
-    for i in range(k, numDates - 1):
+
+    ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+
+    for i in range(randomStartDate, randomStartDate + investmentLength):
         encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
-    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
     ys = torch.Tensor(ys)
     totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
 
@@ -156,7 +160,7 @@ for _ in range(int(numTrainEpisodes/numBatches)):
 
 # %%
 def evaluatePortfolios(ys, actions):
-    assert actions.shape == (numBatches, numDates-k-1, numStocksInSubset)
+    assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
 
     APVs = []
@@ -174,7 +178,7 @@ def evaluatePortfolios(ys, actions):
             inflatedValues.append(inflatedWeights[-1].sum())
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
-        for index in range(numDates-k-1):
+        for index in range(investmentLength):
             tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
             aggInflatedValues.append(aggInflatedValues[-1] * inflatedValues[index] * (1 - tranCost))
         aggInflatedValues = aggInflatedValues[1:]
@@ -184,7 +188,7 @@ def evaluatePortfolios(ys, actions):
 
         maxAggInflatedValueIndex = 0
         minGainRatio = 1
-        for index in range(numDates-k-1):
+        for index in range(investmentLength):
             if aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex] < minGainRatio:
                 minGainRatio = aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex]
             if aggInflatedValues[index] > aggInflatedValues[maxAggInflatedValueIndex]:
@@ -200,17 +204,20 @@ SRs = []
 CRs = []
 
 for _ in range(int(numTestEpisodes/numBatches)):
+    randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
-    ys = [inflations[k:].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
-    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (numDates-k-1: T-k-1, numBatches, numStocksInSubset, 1)
-    for i in range(k, numDates - 1):
+
+    ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+
+    for i in range(randomStartDate, randomStartDate + investmentLength):
         encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
-    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, numDates-k-1: T-k-1, numStocksInSubset)
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
     ys = torch.Tensor(ys)
     tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.cuda(), actions.cuda())
     APVs += tempAPVs
