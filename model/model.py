@@ -3,7 +3,7 @@
 # %%
 k = 30
 l = 5
-numBatches = 128
+numBatches = 100
 numStocksInSubset = 11
 investmentLength = 100
 numTrainEpisodes = 1024
@@ -102,7 +102,6 @@ def getTotalLosses(ys, actions):
 
     for subsetYs, subsetActions in zip(ys, actions):
         reward = 0
-
         originalWeights = subsetActions
         inflatedWeights = []
         inflatedValues = []
@@ -139,7 +138,6 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
-
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
@@ -230,8 +228,10 @@ for _ in range(int(numTestEpisodes/numBatches)):
 
 
 # %%
-CRs
 
+print("APVs", APVs)
+print("SRs", SRs)
+print("CRs", CRs)
 
 # %%
 
