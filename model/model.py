@@ -9,8 +9,8 @@ investmentLength = 60
 numTrainEpisodes = 1024
 tranCostRate = 0.0025
 
+testPerc = 0.2
 numTestEpisodes = 256
-
 eval_interval = 10
 
 
@@ -165,7 +165,7 @@ def evaluatePortfolios(ys, actions):
     return APVs, SRs, CRs
 
 
-def Evaluation(model):
+def Evaluation(model, entryArraysTest):
     APVs = []
     SRs = []
     CRs = []
@@ -173,15 +173,15 @@ def Evaluation(model):
     for _ in range(int(numTestEpisodes/numBatches)):
         print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
         randomStartDate = random.randint(k, numDates - 1 - investmentLength)
-        randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+        randomSubsets = [random.sample(range(len(entryArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
         ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
         actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
         for i in range(randomStartDate, randomStartDate + investmentLength):
-            encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+            encInput = [[priceSeries[i-k:i] for priceSeries in entryArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
             encInput = torch.Tensor(encInput)
-            decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+            decInput = [[priceSeries[i-l:i] for priceSeries in entryArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
             decInput = torch.Tensor(decInput)
             actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
@@ -209,20 +209,26 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 
 
 # %%
+# Train-test split
+np.random.shuffle(entryArrays)
+entryArraysTrain = entryArrays[:int(testPerc * numTickers)]
+entryArraysTest = entryArrays[int(testPerc * numTickers):]
+
+# %%
 modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
     print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
-    randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+    randomSubsets = [random.sample(range(len(entryArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
     ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
     actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
     for i in range(randomStartDate, randomStartDate + investmentLength):
-        encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        encInput = [[priceSeries[i-k:i] for priceSeries in entryArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
-        decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = [[priceSeries[i-l:i] for priceSeries in entryArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
@@ -236,7 +242,7 @@ for _ in range(int(numTrainEpisodes/numBatches)):
     
     if _%eval_interval==0:
         print("testing")
-        Evaluation(modelInstance)
+        Evaluation(modelInstance, entryArraysTest)
         
 
 
