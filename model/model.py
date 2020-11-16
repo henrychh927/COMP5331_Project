@@ -3,9 +3,9 @@
 # %%
 k = 30
 l = 5
-numBatches = 100
+numBatches = 60
 numStocksInSubset = 11
-investmentLength = 100
+investmentLength = 60
 numTrainEpisodes = 1024
 tranCostRate = 0.0025
 
@@ -24,7 +24,7 @@ import os
 
 from transformer import RATransformer
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -138,6 +138,7 @@ def runModel(modelInstance, encInput, decInput, prevAction):
 modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
+    print(f"\r traning progress {_}/{int(numTrainEpisodes/numBatches)}", end='')
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
@@ -206,6 +207,7 @@ SRs = []
 CRs = []
 
 for _ in range(int(numTestEpisodes/numBatches)):
+    print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
