@@ -11,6 +11,8 @@ tranCostRate = 0.0025
 
 numTestEpisodes = 256
 
+eval_interval = 10
+
 
 
 # %%
@@ -120,48 +122,10 @@ def getTotalLosses(ys, actions):
 
         losses.append(-reward)
     
-    print(losses)
+    #print(losses)
     
     return torch.cat(losses).sum()
 
-
-# %%
-def runModel(modelInstance, encInput, decInput, prevAction):
-    assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
-    assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
-    assert prevAction.shape == (numBatches, numStocksInSubset, 1)
-    # return torch.ones(size=(numBatches, numStocksInSubset), requires_grad=True).unsqueeze(-1)/numStocksInSubset
-    return modelInstance.forward(encInput, decInput, prevAction)
-
-
-# %%
-modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
-optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
-for _ in range(int(numTrainEpisodes/numBatches)):
-    print(f"\r traning progress {_}/{int(numTrainEpisodes/numBatches)}", end='')
-    randomStartDate = random.randint(k, numDates - 1 - investmentLength)
-    randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
-
-    ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
-
-    for i in range(randomStartDate, randomStartDate + investmentLength):
-        encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
-        encInput = torch.Tensor(encInput)
-        decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
-        decInput = torch.Tensor(decInput)
-        actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
-
-    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
-    ys = torch.Tensor(ys)
-    totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
-
-    optimizer.zero_grad()
-    totalLosses.backward()
-    optimizer.step()
-
-
-# %%
 def evaluatePortfolios(ys, actions):
     assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
@@ -201,13 +165,54 @@ def evaluatePortfolios(ys, actions):
     return APVs, SRs, CRs
 
 
-# %%
-APVs = []
-SRs = []
-CRs = []
+def Evaluation(model):
+    APVs = []
+    SRs = []
+    CRs = []
 
-for _ in range(int(numTestEpisodes/numBatches)):
-    print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
+    for _ in range(int(numTestEpisodes/numBatches)):
+        print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
+        randomStartDate = random.randint(k, numDates - 1 - investmentLength)
+        randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+
+        ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+        actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+
+        for i in range(randomStartDate, randomStartDate + investmentLength):
+            encInput = [[priceSeries[i-k:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+            encInput = torch.Tensor(encInput)
+            decInput = [[priceSeries[i-l:i] for priceSeries in entryArrays[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+            decInput = torch.Tensor(decInput)
+            actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
+
+        actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
+        ys = torch.Tensor(ys)
+        tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.cuda(), actions.cuda())
+        APVs += tempAPVs
+        SRs += tempSRs
+        CRs += tempCRs
+
+
+    # %%
+
+    print("APVs", torch.mean(torch.tensor(APVs)))
+    print("SRs", torch.mean(torch.tensor(SRs)))
+    print("CRs", torch.mean(torch.tensor(CRs)))
+    
+# %%
+def runModel(modelInstance, encInput, decInput, prevAction):
+    assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
+    assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
+    assert prevAction.shape == (numBatches, numStocksInSubset, 1)
+    # return torch.ones(size=(numBatches, numStocksInSubset), requires_grad=True).unsqueeze(-1)/numStocksInSubset
+    return modelInstance.forward(encInput, decInput, prevAction)
+
+
+# %%
+modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
+optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
+for _ in range(int(numTrainEpisodes/numBatches)):
+    print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(numTickers), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
@@ -223,17 +228,25 @@ for _ in range(int(numTestEpisodes/numBatches)):
 
     actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
     ys = torch.Tensor(ys)
-    tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.cuda(), actions.cuda())
-    APVs += tempAPVs
-    SRs += tempSRs
-    CRs += tempCRs
+    totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
+
+    optimizer.zero_grad()
+    totalLosses.backward()
+    optimizer.step()
+    
+    if _%eval_interval==0:
+        print("testing")
+        Evaluation(modelInstance)
+        
 
 
 # %%
 
-print("APVs", APVs)
-print("SRs", SRs)
-print("CRs", CRs)
+
+
+# %%
+
+
 
 # %%
 
