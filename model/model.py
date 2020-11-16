@@ -195,9 +195,9 @@ def Evaluation(model):
 
     # %%
 
-    print("APVs", torch.mean(torch.tensor(APVs)))
-    print("SRs", torch.mean(torch.tensor(SRs)))
-    print("CRs", torch.mean(torch.tensor(CRs)))
+    print("APVs mean:", torch.mean(torch.tensor(APVs)), ' std:', torch.std(torch.tensor(APVs)))
+    print("SRs mean:", torch.mean(torch.tensor(SRs)), ' std:', torch.mean(torch.tensor(SRs)))
+    print("CRs mean:", torch.mean(torch.tensor(CRs)), ' std:', torch.mean(torch.tensor(CRs)))
     
 # %%
 def runModel(modelInstance, encInput, decInput, prevAction):
