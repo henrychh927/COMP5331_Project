@@ -6,7 +6,6 @@ investmentLength = 60
 numTrainEpisodes = 60*10000
 tranCostRate = 0.0025
 
-testPerc = 0.2             #test data ratio 
 numTestEpisodes = 256 
 eval_interval = 100     
 
@@ -19,7 +18,7 @@ MODEL = "transformer"             #LSTM, CNN, MLP, transformer
 
 
 
-
+# %%
 import pandas as pd
 import numpy as np
 import random
@@ -35,54 +34,46 @@ from baseline import CNN, LSTM, MLP
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
+# %%
 df = pd.read_csv("whole_selected.csv")
-#print(df)
+df = df[["Ticker", "Date", "Open", "High", "Low", "Close"]].sort_values(by=["Ticker", "Date"])
 
-df = df[["Ticker", "Date", "Open", "High", "Low", "Close"]]
-
-tickers = df["Ticker"].unique()
-numTickers = len(tickers)
-#print("Number of tickers: " + str(numTickers))
-tickersDict = {}
-for index, ticker in enumerate(tickers):
-    tickersDict[ticker] = index
-
-df["Ticker"] = df["Ticker"].apply(lambda ticker: tickersDict[ticker])
-print(df)
+# %%
+numTickers = len(df["Ticker"].unique()) # m
+# print("Number of tickers: " + str(numTickers))
 
 datesValueCounts = df["Date"].value_counts()
 validDates = datesValueCounts.loc[datesValueCounts == max(datesValueCounts)].index
 validDates = list(validDates.sort_values())
-#print("Number of valid dates: " + str(len(validDates)))
+# print("Number of valid dates: " + str(len(validDates)))
 
-#print(validDates[:100])
-validDates = validDates[5:]
+# %%
+trainDates = [date for date in validDates if date >= "2013" and date < "2017"]
+testDates = [date for date in validDates if date >= "2017" and date < "2019"]
+# print("Number of dates for training: " + str(len(trainDates)))
+# print("Number of dates for testing: " + str(len(testDates)))
 
-df = df[df["Date"].isin(validDates)]
+# %%
+def generateInputs(df, dates):
+    numDates = len(dates)
+    prices = df[df["Date"].isin(dates)][["Open", "High", "Low", "Close"]].to_numpy()
+    pricesArrays = prices.reshape((numTickers, numDates, 4)) # shape: (numStocks: m, numDates, numFeatures)
 
-dates = df["Date"].unique()
-numDates = len(dates)
-#print("Number of valid dates: " + str(numDates))
-datesDict = {}
-for index, date in enumerate(dates):
-    datesDict[date] = index
+    pricesArraysTransposed = pricesArrays.T # shape: (numFeatures, numDates, numStocks: m)
+    pricesArraysClosingPrices = pricesArraysTransposed[3] # shape: (numDates, numStocks: m)
+    inflations = np.array([pricesArraysClosingPrices[i + 1] / pricesArraysClosingPrices[i] for i in range(len(pricesArraysClosingPrices) - 1)]).T # shape: (numStocks: m, numDates-1)
+    
+    return pricesArrays, inflations
 
-df["Date"] = df["Date"].apply(lambda date: datesDict[date])
-#print(df)
+# %%
+priceArraysTrain, inflationsTrain = generateInputs(df, trainDates)
+priceArraysTest, inflationsTest = generateInputs(df, testDates)
+assert priceArraysTrain.shape == (numTickers, len(trainDates), 4)
+assert inflationsTrain.shape == (numTickers, len(trainDates)-1)
+assert priceArraysTest.shape == (numTickers, len(testDates), 4)
+assert inflationsTest.shape == (numTickers, len(testDates)-1)
 
-df = df.sort_values(by=["Ticker", "Date"])
-#print(df)
-
-entries = df[["Open", "High", "Low", "Close"]].to_numpy()
-entryArrays = entries.reshape((numTickers, numDates, 4)) # shape: (numStocks: m, numDates: T, numFeatures)
-#print(entryArrays.shape)
-
-entryArraysTransposed = entryArrays.T # shape: (numFeatures, numDates: T, numStocks: m)
-entryArraysClosingPrices = entryArraysTransposed[3] # shape: (numDates: T, numStocks: m)
-inflations = np.array([entryArraysClosingPrices[i + 1] / entryArraysClosingPrices[i] for i in range(len(entryArraysClosingPrices) - 1)]) # shape: (numDates-1: T-1, numStocks: m)
-#print(inflations.shape) # percentage change from period i to (i+1)
-
-
+# %%
 def getTotalLosses(ys, actions):
     assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
@@ -113,6 +104,7 @@ def getTotalLosses(ys, actions):
     
     return torch.cat(losses).sum()
 
+# %%
 def evaluatePortfolios(ys, actions):
     assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
@@ -151,24 +143,24 @@ def evaluatePortfolios(ys, actions):
 
     return APVs, SRs, CRs
 
-
-def Evaluation(model, entryArraysTest):
+# %%
+def Evaluation(model):
     APVs = []
     SRs = []
     CRs = []
 
     for _ in range(int(numTestEpisodes/numBatches)):
         #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
-        randomStartDate = random.randint(k, numDates - 1 - investmentLength)
-        randomSubsets = [random.sample(range(len(entryArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+        randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - investmentLength)
+        randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-        ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+        ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
         actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
         for i in range(randomStartDate, randomStartDate + investmentLength):
-            encInput = [[priceSeries[i-k:i] for priceSeries in entryArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+            encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
             encInput = torch.Tensor(encInput)
-            decInput = [[priceSeries[i-l:i] for priceSeries in entryArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+            decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
             decInput = torch.Tensor(decInput)
             actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
@@ -185,7 +177,7 @@ def Evaluation(model, entryArraysTest):
     print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
     print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
     
-
+# %%
 def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
@@ -196,18 +188,12 @@ def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
         return modelInstance.forward(encInput, decInput, prevAction)
     else:
         return modelInstance.forward(encInput)
-    
+
+# %%
 def count_parameters(model):
     temp = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'The model architecture:\n\n', model)
     print(f'\nThe model has {temp:,} trainable parameters')
-
-
-# %%
-# Train-test split
-np.random.shuffle(entryArrays)
-entryArraysTrain = entryArrays[:int(testPerc * numTickers)]
-entryArraysTest = entryArrays[int(testPerc * numTickers):]
 
 # %%
 if MODEL=="transformer":
@@ -227,16 +213,16 @@ count_parameters(modelInstance)
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-4)
 for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
     #print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
-    randomStartDate = random.randint(k, numDates - 1 - investmentLength)
-    randomSubsets = [random.sample(range(len(entryArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+    randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - investmentLength)
+    randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-    ys = [inflations[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+    ys = [inflationsTrain.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
     actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
     for i in range(randomStartDate, randomStartDate + investmentLength):
-        encInput = [[priceSeries[i-k:i] for priceSeries in entryArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
-        decInput = [[priceSeries[i-l:i] for priceSeries in entryArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
 
@@ -250,6 +236,6 @@ for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
     
     if (_+1)%eval_interval==0:
         print("\n testing _")
-        Evaluation(modelInstance, entryArraysTest)
+        Evaluation(modelInstance)
         
 
