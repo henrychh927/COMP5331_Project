@@ -17,6 +17,10 @@ class MLP(nn.Module):
             self.short_sale = nn.Linear(self.hidden_size, 1)
             self.reinvestment = nn.Linear(self.hidden_size, 1)
             
+            for p in self.parameters():
+                if p.dim() > 1:
+                    nn.init.xavier_uniform_(p)
+            
         def forward(self, x):
             # x: b, num_stock, date, feature
             
@@ -28,9 +32,9 @@ class MLP(nn.Module):
             a_s = self.short_sale(x) # x: b, num_stock, 1
             a_r = self.reinvestment(x) # x: b, num_stock, 1
             
-            a = F.sigmoid(a) 
-            a_s = F.sigmoid(a_s)
-            a_r = F.sigmoid(a_r)
+            a = F.softmax(a,1) 
+            a_s = F.softmax(a_s,1)
+            a_r = F.softmax(a_r,1)
             
             # b, num_stock, 1
             return a-a_s+a_r
@@ -50,6 +54,9 @@ class LSTM(nn.Module):
         self.initial_portfolio = nn.Linear(self.n_layer*self.hidden_size, 1)
         self.short_sale = nn.Linear(self.n_layer*self.hidden_size, 1)
         self.reinvestment = nn.Linear(self.n_layer*self.hidden_size, 1)
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
         
 
 
@@ -68,9 +75,9 @@ class LSTM(nn.Module):
         a_s = self.short_sale(x) # x: b, num_stock, 1
         a_r = self.reinvestment(x) # x: b, num_stock, 1
             
-        a = F.sigmoid(a) 
-        a_s = F.sigmoid(a_s)
-        a_r = F.sigmoid(a_r)
+        a = F.softmax(a, 1) 
+        a_s = F.softmax(a_s, 1)
+        a_r = F.softmax(a_r, 1)
         
         # b, num_stock, 1.num_feature, self.1)
         return a-a_s+a_r
@@ -102,6 +109,9 @@ class CNN(nn.Module):
         self.initial_portfolio = nn.Linear(self.num_feature_maps*len(self.filter_sizes), 1)
         self.short_sale = nn.Linear(self.num_feature_maps*len(self.filter_sizes), 1)
         self.reinvestment = nn.Linear(self.num_feature_maps*len(self.filter_sizes), 1)
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def forward(self, x):
         # x: b, num_stock, date, feature
@@ -121,9 +131,9 @@ class CNN(nn.Module):
         a_s = self.short_sale(x) # x: b, num_stock, 1
         a_r = self.reinvestment(x) # x: b, num_stock, 1
 
-        a = F.sigmoid(a) 
-        a_s = F.sigmoid(a_s)
-        a_r = F.sigmoid(a_r)
+        a = F.softmax(a,1) 
+        a_s = F.softmax(a_s,1)
+        a_r = F.softmax(a_r,1)
 
         # b, num_stock, 1
         return a-a_s+a_r

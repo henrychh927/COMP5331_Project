@@ -6,14 +6,13 @@ l = 5
 numBatches = 60
 numStocksInSubset = 11
 investmentLength = 60
-numTrainEpisodes = 1024
+numTrainEpisodes = 10240
 tranCostRate = 0.0025
 
 testPerc = 0.2
 numTestEpisodes = 256
 eval_interval = 10
-
-
+MODEL = "LSTM"  # LSTM, CNN, MLP, transformer
 
 # %%
 import pandas as pd
@@ -25,8 +24,9 @@ import torch.optim as optim
 import os
 
 from transformer import RATransformer
+from baseline import CNN, LSTM, MLP
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -193,19 +193,23 @@ def Evaluation(model, entryArraysTest):
         CRs += tempCRs
 
 
-    # %%
 
-    print("APVs mean:", torch.mean(torch.tensor(APVs)), ' std:', torch.std(torch.tensor(APVs)))
-    print("SRs mean:", torch.mean(torch.tensor(SRs)), ' std:', torch.mean(torch.tensor(SRs)))
-    print("CRs mean:", torch.mean(torch.tensor(CRs)), ' std:', torch.mean(torch.tensor(CRs)))
+    print("APVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
+    print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
+    print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
     
 # %%
-def runModel(modelInstance, encInput, decInput, prevAction):
+def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
     assert prevAction.shape == (numBatches, numStocksInSubset, 1)
     # return torch.ones(size=(numBatches, numStocksInSubset), requires_grad=True).unsqueeze(-1)/numStocksInSubset
-    return modelInstance.forward(encInput, decInput, prevAction)
+    
+    if model=="transformer":
+        return modelInstance.forward(encInput, decInput, prevAction)
+    else:
+        return modelInstance.forward(encInput)
+    
 
 
 # %%
@@ -215,7 +219,17 @@ entryArraysTrain = entryArrays[:int(testPerc * numTickers)]
 entryArraysTest = entryArrays[int(testPerc * numTickers):]
 
 # %%
-modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
+if MODEL=="transformer":
+    modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
+elif MODEL=="CNN":
+    modelInstance = CNN(4, 100).cuda()
+elif MODEL=="LSTM":
+    modelInstance = LSTM(4, 100, 2).cuda()
+elif MODEL=="MLP":
+    modelInstance = MLP(30, 4, 100).cuda()
+else:
+    print("invalid model selection")
+    
 optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
 for _ in range(int(numTrainEpisodes/numBatches)):
     print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
@@ -244,17 +258,4 @@ for _ in range(int(numTrainEpisodes/numBatches)):
         print("testing")
         Evaluation(modelInstance, entryArraysTest)
         
-
-
-# %%
-
-
-
-# %%
-
-
-
-# %%
-
-
 
