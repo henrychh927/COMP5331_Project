@@ -1,46 +1,48 @@
-# To add a new cell, type '# %%'
-# To add a new markdown cell, type '# %% [markdown]'
-# %%
-k = 30
-l = 5
-numBatches = 60
-numStocksInSubset = 11
-investmentLength = 60
-numTrainEpisodes = 10240
+k = 30                     #number of date in a batch
+l = 5                      #context window size
+numBatches = 60            #batch size
+numStocksInSubset = 11     #num of stocks in a batch 
+investmentLength = 60      
+numTrainEpisodes = 60*10000
 tranCostRate = 0.0025
 
-testPerc = 0.2
-numTestEpisodes = 256
-eval_interval = 10
-MODEL = "LSTM"  # LSTM, CNN, MLP, transformer
+testPerc = 0.2             #test data ratio 
+numTestEpisodes = 256 
+eval_interval = 100     
 
-# %%
+# selection of model 
+MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import random
+import os
+from tqdm import tqdm
 
 import torch
 import torch.optim as optim
-import os
+
 
 from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-# %%
 df = pd.read_csv("whole_selected.csv")
-print(df)
+#print(df)
 
-
-# %%
 df = df[["Ticker", "Date", "Open", "High", "Low", "Close"]]
 
-
-# %%
 tickers = df["Ticker"].unique()
 numTickers = len(tickers)
-print("Number of tickers: " + str(numTickers))
+#print("Number of tickers: " + str(numTickers))
 tickersDict = {}
 for index, ticker in enumerate(tickers):
     tickersDict[ticker] = index
@@ -48,54 +50,39 @@ for index, ticker in enumerate(tickers):
 df["Ticker"] = df["Ticker"].apply(lambda ticker: tickersDict[ticker])
 print(df)
 
-
-# %%
 datesValueCounts = df["Date"].value_counts()
 validDates = datesValueCounts.loc[datesValueCounts == max(datesValueCounts)].index
 validDates = list(validDates.sort_values())
-print("Number of valid dates: " + str(len(validDates)))
+#print("Number of valid dates: " + str(len(validDates)))
 
-
-# %%
-print(validDates[:100])
+#print(validDates[:100])
 validDates = validDates[5:]
 
-
-# %%
 df = df[df["Date"].isin(validDates)]
 
-
-# %%
 dates = df["Date"].unique()
 numDates = len(dates)
-print("Number of valid dates: " + str(numDates))
+#print("Number of valid dates: " + str(numDates))
 datesDict = {}
 for index, date in enumerate(dates):
     datesDict[date] = index
 
 df["Date"] = df["Date"].apply(lambda date: datesDict[date])
-print(df)
+#print(df)
 
-
-# %%
 df = df.sort_values(by=["Ticker", "Date"])
-print(df)
+#print(df)
 
-
-# %%
 entries = df[["Open", "High", "Low", "Close"]].to_numpy()
 entryArrays = entries.reshape((numTickers, numDates, 4)) # shape: (numStocks: m, numDates: T, numFeatures)
-print(entryArrays)
+#print(entryArrays.shape)
 
-
-# %%
 entryArraysTransposed = entryArrays.T # shape: (numFeatures, numDates: T, numStocks: m)
 entryArraysClosingPrices = entryArraysTransposed[3] # shape: (numDates: T, numStocks: m)
 inflations = np.array([entryArraysClosingPrices[i + 1] / entryArraysClosingPrices[i] for i in range(len(entryArraysClosingPrices) - 1)]) # shape: (numDates-1: T-1, numStocks: m)
-print(inflations) # percentage change from period i to (i+1)
+#print(inflations.shape) # percentage change from period i to (i+1)
 
 
-# %%
 def getTotalLosses(ys, actions):
     assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
     assert ys.shape == actions.shape
@@ -171,7 +158,7 @@ def Evaluation(model, entryArraysTest):
     CRs = []
 
     for _ in range(int(numTestEpisodes/numBatches)):
-        print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
+        #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
         randomStartDate = random.randint(k, numDates - 1 - investmentLength)
         randomSubsets = [random.sample(range(len(entryArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
@@ -194,11 +181,11 @@ def Evaluation(model, entryArraysTest):
 
 
 
-    print("APVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
+    print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
     print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
     print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
     
-# %%
+
 def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
@@ -210,6 +197,10 @@ def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
     else:
         return modelInstance.forward(encInput)
     
+def count_parameters(model):
+    temp = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'The model architecture:\n\n', model)
+    print(f'\nThe model has {temp:,} trainable parameters')
 
 
 # %%
@@ -222,17 +213,20 @@ entryArraysTest = entryArrays[int(testPerc * numTickers):]
 if MODEL=="transformer":
     modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
 elif MODEL=="CNN":
-    modelInstance = CNN(4, 100).cuda()
+    modelInstance = CNN(4, 50).cuda()
 elif MODEL=="LSTM":
-    modelInstance = LSTM(4, 100, 2).cuda()
+    modelInstance = LSTM(4, 50, 2).cuda()
 elif MODEL=="MLP":
-    modelInstance = MLP(30, 4, 100).cuda()
+    modelInstance = MLP(30, 4, 50).cuda()
 else:
     print("invalid model selection")
     
-optimizer = optim.Adam(modelInstance.parameters(),lr=1e-2)
-for _ in range(int(numTrainEpisodes/numBatches)):
-    print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
+print(f"We are using {MODEL}")
+count_parameters(modelInstance)
+
+optimizer = optim.Adam(modelInstance.parameters(),lr=1e-4)
+for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
+    #print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, numDates - 1 - investmentLength)
     randomSubsets = [random.sample(range(len(entryArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
@@ -254,8 +248,8 @@ for _ in range(int(numTrainEpisodes/numBatches)):
     totalLosses.backward()
     optimizer.step()
     
-    if _%eval_interval==0:
-        print("testing")
+    if (_+1)%eval_interval==0:
+        print("\n testing _")
         Evaluation(modelInstance, entryArraysTest)
         
 
