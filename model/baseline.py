@@ -87,7 +87,7 @@ class LSTM(nn.Module):
     
     
 class CNN(nn.Module):
-    def __init__(self, num_feature, hidden_size, dropout=0.1, filter_sizes=[3, 4, 5], num_feature_maps=100):
+    def __init__(self, num_feature, hidden_size, dropout=0.1, filter_sizes=[3, 4, 5], num_feature_maps=20):
         super(CNN, self).__init__()
         self.hidden_size = hidden_size
         self.num_feature = num_feature
