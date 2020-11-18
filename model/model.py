@@ -1,20 +1,35 @@
 k = 30                     #number of date in a batch
 l = 5                      #context window size
-numBatches = 60            #batch size
+num_feature = 4
+numBatches = 128          #batch size
 numStocksInSubset = 11     #num of stocks in a batch 
-investmentLength = 60      
-numTrainEpisodes = 60*10000
+investmentLength = 40      
+numTrainEpisodes = numBatches*10000
 tranCostRate = 0.0025
 
-numTestEpisodes = 256 
-eval_interval = 100     
+numTestEpisodes = numBatches*5
+eval_interval = 10
+
+lr = 1e-3
+weight_decay=1e-7
 
 # selection of model 
 MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
 
+# transformer architecture
+tran_n_layer = 1
+n_head = 2
+d_model = 12
 
+# lstm archi
+lstm_hid = 50
+lstm_layer = 2
 
+# cnn archi
+cnn_hid = 50
 
+# mlp
+mlp_hid = 50
 
 
 
@@ -32,7 +47,7 @@ import torch.optim as optim
 from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -155,7 +170,7 @@ def Evaluation(model):
         randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
         ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-        actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+        actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
         for i in range(randomStartDate, randomStartDate + investmentLength):
             encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
@@ -197,27 +212,27 @@ def count_parameters(model):
 
 # %%
 if MODEL=="transformer":
-    modelInstance = RATransformer(1, k, 4, 12, 2, l).cuda()
+    modelInstance = RATransformer(tran_n_layer, k, num_feature, d_model, n_head, l).cuda()
 elif MODEL=="CNN":
-    modelInstance = CNN(4, 50).cuda()
+    modelInstance = CNN(num_feature, cnn_hid).cuda()
 elif MODEL=="LSTM":
-    modelInstance = LSTM(4, 50, 2).cuda()
+    modelInstance = LSTM(num_feature, lstm_hid, lstm_layer).cuda()
 elif MODEL=="MLP":
-    modelInstance = MLP(30, 4, 50).cuda()
+    modelInstance = MLP(k, num_feature, mlp_hid).cuda()
 else:
     print("invalid model selection")
     
 print(f"We are using {MODEL}")
 count_parameters(modelInstance)
 
-optimizer = optim.Adam(modelInstance.parameters(),lr=1e-4)
+optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
 for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
     #print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - investmentLength)
     randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
     ys = [inflationsTrain.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-    actions = [torch.zeros(size=(numBatches, numStocksInSubset)).unsqueeze(-1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+    actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
 
     for i in range(randomStartDate, randomStartDate + investmentLength):
         encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
@@ -235,7 +250,7 @@ for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
     optimizer.step()
     
     if (_+1)%eval_interval==0:
-        print("\n testing _")
+        print(f"\n testing {_}")
         Evaluation(modelInstance)
         
 
