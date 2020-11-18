@@ -7,8 +7,8 @@ investmentLength = 40
 numTrainEpisodes = numBatches*10000
 tranCostRate = 0.0025
 
-numTestEpisodes = numBatches*5
-eval_interval = 10
+numTestEpisodes = numBatches*1
+eval_interval = 1
 
 lr = 1e-3
 weight_decay=1e-7
@@ -39,6 +39,8 @@ import numpy as np
 import random
 import os
 from tqdm import tqdm
+import time
+
 
 import torch
 import torch.optim as optim
@@ -48,7 +50,7 @@ from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
 
 #os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -68,6 +70,39 @@ trainDates = [date for date in validDates if date >= "2013" and date < "2017"]
 testDates = [date for date in validDates if date >= "2017" and date < "2019"]
 # print("Number of dates for training: " + str(len(trainDates)))
 # print("Number of dates for testing: " + str(len(testDates)))
+
+
+save_folder = './' + str(time.strftime('%b%d%H%M%S', time.localtime()))
+os.makedirs(save_folder)
+print('output Path:', save_folder)
+save_file = save_folder + '/output.txt'
+config_file = save_folder + '/config.txt'
+
+
+with open(config_file, 'a') as fw:
+        print('k,l ,num_feature,numBatches,numStocksInSubset,investmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
+              k,
+              l ,
+              num_feature,
+              numBatches,
+              numStocksInSubset,
+              investmentLength,
+              numTrainEpisodes,
+              tranCostRate,
+              numTestEpisodes,
+              eval_interval,
+              lr,
+              weight_decay,
+              MODEL,
+              tran_n_layer,
+              n_head,
+              d_model,
+              lstm_hid ,
+              lstm_layer ,
+              cnn_hid ,
+              mlp_hid , file=fw)
+            
+            
 
 # %%
 def generateInputs(df, dates):
@@ -160,7 +195,7 @@ def evaluatePortfolios(ys, actions):
     return APVs, SRs, CRs
 
 # %%
-def Evaluation(model):
+def Evaluation(model, epoch):
     APVs = []
     SRs = []
     CRs = []
@@ -194,6 +229,15 @@ def Evaluation(model):
         print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
         print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
         print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
+        
+        with open(save_file, 'a') as fw:
+            print(epoch, torch.mean(torch.tensor(APVs)).item(),
+                  torch.std(torch.tensor(APVs)).item(), 
+                  torch.mean(torch.tensor(SRs)).item(),
+                  torch.mean(torch.tensor(SRs)).item(),
+                  torch.mean(torch.tensor(CRs)).item(), 
+                  torch.mean(torch.tensor(CRs)).item(), file=fw)
+
     
 # %%
 def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
@@ -229,6 +273,13 @@ print(f"We are using {MODEL}")
 count_parameters(modelInstance)
 
 optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
+
+
+
+
+    
+    
+    
 for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
     modelInstance.train()
     #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
@@ -257,6 +308,8 @@ for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
     if (batchIndex+1)%eval_interval==0:
         print(f"training loss: {totalLosses}")
         print(f"\n testing {batchIndex+1}")
-        Evaluation(modelInstance)
+        
+        
+        Evaluation(modelInstance, batchIndex+1)
         
 

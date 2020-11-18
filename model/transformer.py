@@ -2,12 +2,7 @@ import math
 import torch
 from torch import nn
 import torch.nn.functional as F
-import re
 
-
-import os
-
-device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
 
 
@@ -203,7 +198,7 @@ def ContextAttention(x, context_length):
     # x: b, m, t, d_model
     
     b, m, t, d_model = x.size()
-    padding_x = torch.zeros((b, m, context_length-1, d_model)).to(device)
+    padding_x = torch.zeros((b, m, context_length-1, d_model)).to(x.device)
     x = torch.cat([padding_x, x], 2)
     
     attn_weight = torch.matmul(x[:,:,context_length-1:,:], x.transpose(-2, -1))/ math.sqrt(d_model)   #  x: b, m, t, t
