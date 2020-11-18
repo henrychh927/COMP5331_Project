@@ -80,7 +80,7 @@ config_file = save_folder + '/config.txt'
 
 
 with open(config_file, 'a') as fw:
-        print('k,l ,num_feature,numBatches,numStocksInSubset,investmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
+           print('k,l,num_feature,numBatches,numStocksInSubset,investmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
               k,
               l ,
               num_feature,
