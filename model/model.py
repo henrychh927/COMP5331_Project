@@ -170,7 +170,7 @@ def Evaluation(model):
         randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
         ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-        actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+        actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1) average assignment
 
         for i in range(randomStartDate, randomStartDate + investmentLength):
             encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
@@ -232,7 +232,7 @@ for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
     randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
     ys = [inflationsTrain.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-    actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)
+    actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)  average assignment
 
     for i in range(randomStartDate, randomStartDate + investmentLength):
         encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
