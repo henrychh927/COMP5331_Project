@@ -164,35 +164,36 @@ def Evaluation(model):
     APVs = []
     SRs = []
     CRs = []
+    model.eval()
+    with torch.no_grad():
+        for _ in range(int(numTestEpisodes/numBatches)):
+            #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
+            randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - investmentLength)
+            randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-    for _ in range(int(numTestEpisodes/numBatches)):
-        #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
-        randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - investmentLength)
-        randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+            ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+            ys = torch.Tensor(ys)
+            ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-        ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-        ys = torch.Tensor(ys)
-        ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
+            actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1) average assignment
+            for i in range(randomStartDate, randomStartDate + investmentLength):
+                encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
+                encInput = torch.Tensor(encInput)
+                decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
+                decInput = torch.Tensor(decInput)
+                actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
+            actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-        actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1) average assignment
-        for i in range(randomStartDate, randomStartDate + investmentLength):
-            encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
-            encInput = torch.Tensor(encInput)
-            decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
-            decInput = torch.Tensor(decInput)
-            actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
-        actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
-
-        tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.to(device), actions.to(device))
-        APVs += tempAPVs
-        SRs += tempSRs
-        CRs += tempCRs
+            tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.to(device), actions.to(device))
+            APVs += tempAPVs
+            SRs += tempSRs
+            CRs += tempCRs
 
 
 
-    print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
-    print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
-    print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
+        print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
+        print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.mean(torch.tensor(SRs)).item())
+        print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.mean(torch.tensor(CRs)).item())
     
 # %%
 def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
@@ -229,6 +230,7 @@ count_parameters(modelInstance)
 
 optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
 for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
+    modelInstance.train()
     #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - investmentLength)
     randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
@@ -253,6 +255,7 @@ for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
     optimizer.step()
     
     if (batchIndex+1)%eval_interval==0:
+        print(f"training loss: {totalLosses}")
         print(f"\n testing {batchIndex+1}")
         Evaluation(modelInstance)
         
