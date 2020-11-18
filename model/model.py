@@ -47,7 +47,8 @@ import torch.optim as optim
 from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -100,7 +101,7 @@ def getTotalLosses(ys, actions):
         originalWeights = subsetActions
         inflatedWeights = []
         inflatedValues = []
-        updatedWeights = [torch.zeros(len(subsetActions[0])).cuda()]
+        updatedWeights = [torch.zeros(len(subsetActions[0])).to(device)]
         for index, currWeights in enumerate(subsetActions):
             inflatedWeights.append(currWeights * subsetYs[index])
             inflatedValues.append(inflatedWeights[-1].sum())
@@ -132,7 +133,7 @@ def evaluatePortfolios(ys, actions):
         originalWeights = subsetActions
         inflatedWeights = []
         inflatedValues = []
-        updatedWeights = [torch.zeros(len(subsetActions[0])).cuda()]
+        updatedWeights = [torch.zeros(len(subsetActions[0])).to(device)]
         aggInflatedValues = [1]
         for index, currWeights in enumerate(subsetActions):
             inflatedWeights.append(currWeights * subsetYs[index])
@@ -179,10 +180,10 @@ def Evaluation(model):
             encInput = torch.Tensor(encInput)
             decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
             decInput = torch.Tensor(decInput)
-            actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
+            actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
         actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-        tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.cuda(), actions.cuda())
+        tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.to(device), actions.to(device))
         APVs += tempAPVs
         SRs += tempSRs
         CRs += tempCRs
@@ -213,13 +214,13 @@ def count_parameters(model):
 
 # %%
 if MODEL=="transformer":
-    modelInstance = RATransformer(tran_n_layer, k, num_feature, d_model, n_head, l).cuda()
+    modelInstance = RATransformer(tran_n_layer, k, num_feature, d_model, n_head, l).to(device)
 elif MODEL=="CNN":
-    modelInstance = CNN(num_feature, cnn_hid).cuda()
+    modelInstance = CNN(num_feature, cnn_hid).to(device)
 elif MODEL=="LSTM":
-    modelInstance = LSTM(num_feature, lstm_hid, lstm_layer).cuda()
+    modelInstance = LSTM(num_feature, lstm_hid, lstm_layer).to(device)
 elif MODEL=="MLP":
-    modelInstance = MLP(k, num_feature, mlp_hid).cuda()
+    modelInstance = MLP(k, num_feature, mlp_hid).to(device)
 else:
     print("invalid model selection")
     
@@ -242,10 +243,10 @@ for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
-        actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
+        actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
     actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-    totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
+    totalLosses = getTotalLosses(ys.to(device), actions.to(device))
 
     optimizer.zero_grad()
     totalLosses.backward()
