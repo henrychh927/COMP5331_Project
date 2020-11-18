@@ -90,7 +90,7 @@ assert inflationsTest.shape == (numTickers, len(testDates)-1)
 
 # %%
 def getTotalLosses(ys, actions):
-    assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
+    assert actions.shape == (numBatches, investmentLength, numStocksInSubset + 1)
     assert ys.shape == actions.shape
 
     losses = []
@@ -107,7 +107,7 @@ def getTotalLosses(ys, actions):
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
         for index in range(investmentLength):
-            tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
+            tranCost = tranCostRate * abs(originalWeights[index][1:] - updatedWeights[index][1:]).sum()
             reward += torch.log(inflatedValues[index] * (1 - tranCost))
         
         reward /= investmentLength
@@ -121,7 +121,7 @@ def getTotalLosses(ys, actions):
 
 # %%
 def evaluatePortfolios(ys, actions):
-    assert actions.shape == (numBatches, investmentLength, numStocksInSubset)
+    assert actions.shape == (numBatches, investmentLength, numStocksInSubset+1)
     assert ys.shape == actions.shape
 
     APVs = []
@@ -140,7 +140,7 @@ def evaluatePortfolios(ys, actions):
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
         for index in range(investmentLength):
-            tranCost = tranCostRate * abs(originalWeights[index] - updatedWeights[index]).sum()
+            tranCost = tranCostRate * abs(originalWeights[index][1:] - updatedWeights[index][1:]).sum()
             aggInflatedValues.append(aggInflatedValues[-1] * inflatedValues[index] * (1 - tranCost))
         aggInflatedValues = aggInflatedValues[1:]
 
@@ -170,17 +170,18 @@ def Evaluation(model):
         randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
         ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-        actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1) average assignment
+        ys = torch.Tensor(ys)
+        ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
+        actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1) average assignment
         for i in range(randomStartDate, randomStartDate + investmentLength):
-            encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+            encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
             encInput = torch.Tensor(encInput)
-            decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+            decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
             decInput = torch.Tensor(decInput)
             actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
+        actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-        actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
-        ys = torch.Tensor(ys)
         tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.cuda(), actions.cuda())
         APVs += tempAPVs
         SRs += tempSRs
@@ -196,8 +197,8 @@ def Evaluation(model):
 def runModel(modelInstance, encInput, decInput, prevAction, model=MODEL):
     assert encInput.shape == (numBatches, numStocksInSubset, k, 4)
     assert decInput.shape == (numBatches, numStocksInSubset, l, 4)
-    assert prevAction.shape == (numBatches, numStocksInSubset, 1)
-    # return torch.ones(size=(numBatches, numStocksInSubset), requires_grad=True).unsqueeze(-1)/numStocksInSubset
+    assert prevAction.shape == (numBatches, numStocksInSubset + 1, 1)
+    # return torch.ones(size=(numBatches, numStocksInSubset + 1), requires_grad=True).unsqueeze(-1)/(numStocksInSubset + 1)
     
     if model=="transformer":
         return modelInstance.forward(encInput, decInput, prevAction)
@@ -226,31 +227,32 @@ print(f"We are using {MODEL}")
 count_parameters(modelInstance)
 
 optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
-for _ in tqdm(range(int(numTrainEpisodes/numBatches))):
-    #print("\r traning progress " , str(_) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
+for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
+    #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
     randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - investmentLength)
     randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
     ys = [inflationsTrain.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
-    actions = [torch.ones(size=(numBatches, numStocksInSubset)).unsqueeze(-1)/numStocksInSubset] # shape after for loop: (investmentLength, numBatches, numStocksInSubset, 1)  average assignment
+    ys = torch.Tensor(ys)
+    ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
+    actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1)  average assignment
     for i in range(randomStartDate, randomStartDate + investmentLength):
-        encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, priceSeriesLength: k, numFeatures)
+        encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
-        decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset, localContextLength: l, numFeatures)
+        decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.cuda(), decInput.cuda(), actions[-1].cuda()))
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
 
-    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset)
-    ys = torch.Tensor(ys)
     totalLosses = getTotalLosses(ys.cuda(), actions.cuda())
 
     optimizer.zero_grad()
     totalLosses.backward()
     optimizer.step()
     
-    if (_+1)%eval_interval==0:
-        print(f"\n testing {_}")
+    if (batchIndex+1)%eval_interval==0:
+        print(f"\n testing {batchIndex+1}")
         Evaluation(modelInstance)
         
 
