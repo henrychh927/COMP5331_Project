@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 class RATransformer(nn.Module):
-    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, start_idx=0, dropout=0.1):
+    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, rat_b=False start_idx=0, dropout=0.1):
         # num_layers: number of layer for encoder and decoder
         # interval: time interval for the input sequence, such as 30 days
         # d_fearture: number of feature, which shoud be 4 ( open, highest, lowest, close)
@@ -26,7 +26,7 @@ class RATransformer(nn.Module):
         self.emb_dec = FeatureEmbeddingLayer(d_feature, d_model, start_idx, dropout)
         self.encoder = Encoder(num_layers, d_model, h, context_len, dropout)
         self.decoder = Decoder(num_layers, d_model, h, context_len, dropout)
-        self.decision = DecisionLayer(d_model, d_feature)
+        self.decision = DecisionLayer(d_model, d_feature, rat_b)
         
         for p in self.parameters():
             if p.dim() > 1:
@@ -55,7 +55,7 @@ class RATransformer(nn.Module):
 
     
 class DecisionLayer(nn.Module):
-    def __init__(self, d_model, n_feature):
+    def __init__(self, d_model, n_feature, rat_b=False):
         super(DecisionLayer, self).__init__()
         self.initial_portfolio = nn.Linear(d_model+1, 1)
         self.short_sale = nn.Linear(d_model+1, 1)
@@ -64,14 +64,23 @@ class DecisionLayer(nn.Module):
         self.money2 = torch.nn.Parameter(torch.zeros([1,1,1]))
         self.money3 = torch.nn.Parameter(torch.zeros([1,1,1]))
         
+        self.rat_b = rat_b
+        self.rat_b_linear = nn.Linear(d_model, 1)
 
     def forward(self, x, previous):
         # x: b, m, context_len, d_model
         # previous: b, m+1, 1
-        
         b = x.size()[0]
+        x = x[:,:,-1,:]
+        
+        if self.rat_b:
+            x = self.rat_b_linear(x) #b, m, 1
+            a = torch.cat([money,x],1)  #  b, m+1, 1
+            return a = F.softmax(a, 1) #  b, m+1, 1
+        
+        
         previous = previous[:,1:,:]   # previous: b, m, 1  remove money
-        x = x[:,:,-1,:] # get the last day.  #x.squeeze(-2)
+         # get the last day.  #x.squeeze(-2)
         x = torch.cat([x, previous], 2) # x: b, m, d_model+1
         
         
