@@ -111,6 +111,8 @@ def generateInputs(df, dates):
     prices = df[df["Date"].isin(dates)][["Open", "High", "Low", "Close"]].to_numpy()
     pricesArrays = prices.reshape((numTickers, numDates, 4)) # shape: (numStocks: m, numDates, numFeatures)
 
+    pricesArrays = pricesArrays / pricesArrays[0]
+
     pricesArraysTransposed = pricesArrays.T # shape: (numFeatures, numDates, numStocks: m)
     pricesArraysClosingPrices = pricesArraysTransposed[3] # shape: (numDates, numStocks: m)
     inflations = np.array([pricesArraysClosingPrices[i + 1] / pricesArraysClosingPrices[i] for i in range(len(pricesArraysClosingPrices) - 1)]).T # shape: (numStocks: m, numDates-1)
