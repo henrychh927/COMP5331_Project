@@ -3,10 +3,11 @@ l = 5                      #context window size
 num_feature = 4
 numBatches = 128          #batch size
 numStocksInSubset = 11     #num of stocks in a batch 
-investmentLength = 40      
+trainInvestmentLength = 40      
 numTrainEpisodes = numBatches*10000
 tranCostRate = 0.0025
 
+testInvestmentLength = 400
 numTestEpisodes = numBatches*1
 eval_interval = 1
 
@@ -14,7 +15,7 @@ lr = 1e-3
 weight_decay=1e-7
 
 # selection of model 
-MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
+MODEL = "MLP"             #LSTM, CNN, MLP, transformer  
 
 # transformer architecture
 tran_n_layer = 1
@@ -80,13 +81,13 @@ config_file = save_folder + '/config.txt'
 
 
 with open(config_file, 'a') as fw:
-           print('k,l,num_feature,numBatches,numStocksInSubset,investmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
+           print('k,l,num_feature,numBatches,numStocksInSubset,trainInvestmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
               k,
               l ,
               num_feature,
               numBatches,
               numStocksInSubset,
-              investmentLength,
+              trainInvestmentLength,
               numTrainEpisodes,
               tranCostRate,
               numTestEpisodes,
@@ -126,7 +127,7 @@ assert inflationsTest.shape == (numTickers, len(testDates)-1)
 
 # %%
 def getTotalLosses(ys, actions):
-    assert actions.shape == (numBatches, investmentLength, numStocksInSubset + 1)
+    assert actions.shape == (numBatches, trainInvestmentLength, numStocksInSubset + 1)
     assert ys.shape == actions.shape
 
     losses = []
@@ -142,11 +143,11 @@ def getTotalLosses(ys, actions):
             inflatedValues.append(inflatedWeights[-1].sum())
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
-        for index in range(investmentLength):
+        for index in range(trainInvestmentLength):
             tranCost = tranCostRate * abs(originalWeights[index][1:] - updatedWeights[index][1:]).sum()
             reward += torch.log(inflatedValues[index] * (1 - tranCost))
         
-        reward /= investmentLength
+        reward /= trainInvestmentLength
         reward = reward.unsqueeze(0)
 
         losses.append(-reward)
@@ -157,7 +158,7 @@ def getTotalLosses(ys, actions):
 
 # %%
 def evaluatePortfolios(ys, actions):
-    assert actions.shape == (numBatches, investmentLength, numStocksInSubset+1)
+    assert actions.shape == (numBatches, testInvestmentLength, numStocksInSubset+1)
     assert ys.shape == actions.shape
 
     APVs = []
@@ -175,7 +176,7 @@ def evaluatePortfolios(ys, actions):
             inflatedValues.append(inflatedWeights[-1].sum())
             updatedWeights.append(inflatedWeights[-1] / inflatedValues[-1])
 
-        for index in range(investmentLength):
+        for index in range(testInvestmentLength):
             tranCost = tranCostRate * abs(originalWeights[index][1:] - updatedWeights[index][1:]).sum()
             aggInflatedValues.append(aggInflatedValues[-1] * inflatedValues[index] * (1 - tranCost))
         aggInflatedValues = aggInflatedValues[1:]
@@ -185,7 +186,7 @@ def evaluatePortfolios(ys, actions):
 
         maxAggInflatedValueIndex = 0
         minGainRatio = 1
-        for index in range(investmentLength):
+        for index in range(testInvestmentLength):
             if aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex] < minGainRatio:
                 minGainRatio = aggInflatedValues[index] / aggInflatedValues[maxAggInflatedValueIndex]
             if aggInflatedValues[index] > aggInflatedValues[maxAggInflatedValueIndex]:
@@ -203,21 +204,21 @@ def Evaluation(model, epoch):
     with torch.no_grad():
         for _ in range(int(numTestEpisodes/numBatches)):
             #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
-            randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - investmentLength)
+            randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - testInvestmentLength)
             randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-            ys = [inflationsTest.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+            ys = [inflationsTest.T[randomStartDate:randomStartDate+testInvestmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, testInvestmentLength, numStocksInSubset)
             ys = torch.Tensor(ys)
-            ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
+            ys = torch.cat([torch.ones(size=(numBatches, testInvestmentLength, 1)), ys], 2) # shape: (numBatches, testInvestmentLength, numStocksInSubset+1)
 
-            actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1) average assignment
-            for i in range(randomStartDate, randomStartDate + investmentLength):
+            actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (testInvestmentLength, numBatches, numStocksInSubset+1, 1) average assignment
+            for i in range(randomStartDate, randomStartDate + testInvestmentLength):
                 encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
                 encInput = torch.Tensor(encInput)
                 decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
                 decInput = torch.Tensor(decInput)
                 actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
-            actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
+            actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, testInvestmentLength, numStocksInSubset+1)
 
             tempAPVs, tempSRs, tempCRs = evaluatePortfolios(ys.to(device), actions.to(device))
             APVs += tempAPVs
@@ -283,21 +284,21 @@ optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_dec
 for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
     modelInstance.train()
     #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
-    randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - investmentLength)
+    randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - trainInvestmentLength)
     randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-    ys = [inflationsTrain.T[randomStartDate:randomStartDate+investmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, investmentLength, numStocksInSubset)
+    ys = [inflationsTrain.T[randomStartDate:randomStartDate+trainInvestmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, trainInvestmentLength, numStocksInSubset)
     ys = torch.Tensor(ys)
-    ys = torch.cat([torch.ones(size=(numBatches, investmentLength, 1)), ys], 2) # shape: (numBatches, investmentLength, numStocksInSubset+1)
+    ys = torch.cat([torch.ones(size=(numBatches, trainInvestmentLength, 1)), ys], 2) # shape: (numBatches, trainInvestmentLength, numStocksInSubset+1)
 
-    actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (investmentLength, numBatches, numStocksInSubset+1, 1)  average assignment
-    for i in range(randomStartDate, randomStartDate + investmentLength):
+    actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (trainInvestmentLength, numBatches, numStocksInSubset+1, 1)  average assignment
+    for i in range(randomStartDate, randomStartDate + trainInvestmentLength):
         encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
         encInput = torch.Tensor(encInput)
         decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTrain[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
         decInput = torch.Tensor(decInput)
         actions.append(runModel(modelInstance, encInput.to(device), decInput.to(device), actions[-1].to(device)))
-    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, investmentLength, numStocksInSubset+1)
+    actions = torch.stack(actions[1:]).permute([1, 0, 2, 3]).squeeze(-1) # shape: (numBatches, trainInvestmentLength, numStocksInSubset+1)
 
     totalLosses = getTotalLosses(ys.to(device), actions.to(device))
 
