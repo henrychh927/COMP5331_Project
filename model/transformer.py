@@ -65,40 +65,36 @@ class DecisionLayer(nn.Module):
         self.money3 = torch.nn.Parameter(torch.zeros([1,1,1]))
         
         self.rat_b = rat_b
-        self.rat_b_linear = nn.Linear(d_model, 1)
 
     def forward(self, x, previous):
         # x: b, m, context_len, d_model
         # previous: b, m+1, 1
         b = x.size()[0]
         x = x[:,:,-1,:]
-        
-        if self.rat_b:
-            x = self.rat_b_linear(x) #b, m, 1
-            a = torch.cat([money,x],1)  #  b, m+1, 1
-            return a = F.softmax(a, 1) #  b, m+1, 1
-        
-        
         previous = previous[:,1:,:]   # previous: b, m, 1  remove money
          # get the last day.  #x.squeeze(-2)
         x = torch.cat([x, previous], 2) # x: b, m, d_model+1
         
         
         money = self.money.repeat(b,1,1)    #b,1,1
+        a = self.initial_portfolio(x) #  b, m, 1
+        a = torch.cat([money,a],1)  #  b, m+1, 1
+        a = F.softmax(a, 1) #  b, m+1, 1
+        
+        if self.rat_b:
+            return a
+        
         money2 = self.money2.repeat(b,1,1) #b,1,1
         money3 = self.money3.repeat(b,1,1) #b,1,1
-        
-        
-        a = self.initial_portfolio(x) #  b, m, 1
         a_s = self.short_sale(x) #  b, m, 1
         a_r = self.reinvestment(x) #  b, m, 1
                 
-        a = torch.cat([money,a],1)  #  b, m+1, 1
+        
         a_s = torch.cat([money2,a_s],1)  #  b, m+1, 1
         a_r = torch.cat([money3,a_r],1)  #  b, m+1, 1
         
         
-        a = F.softmax(a, 1) #  b, m+1, 1
+        
         a_s = F.softmax(a_s, 1) #  b, m+1, 1
         a_r = F.softmax(a_r, 1) #  b, m+1, 1
         
