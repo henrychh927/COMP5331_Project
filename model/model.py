@@ -7,7 +7,7 @@ trainInvestmentLength = 40
 numTrainEpisodes = numBatches*10000
 tranCostRate = 0.0025
 
-testInvestmentLength = 400
+testInvestmentLength = 466 - k - 1 # len(testDates) - k - 1
 numTestEpisodes = numBatches*1
 eval_interval = 1
 
