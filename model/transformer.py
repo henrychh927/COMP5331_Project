@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 class RATransformer(nn.Module):
-    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, rat_b=False start_idx=0, dropout=0.1):
+    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, rat_b=False, start_idx=0, dropout=0.1):
         # num_layers: number of layer for encoder and decoder
         # interval: time interval for the input sequence, such as 30 days
         # d_fearture: number of feature, which shoud be 4 ( open, highest, lowest, close)
