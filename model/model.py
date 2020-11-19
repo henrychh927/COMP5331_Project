@@ -206,15 +206,15 @@ def Evaluation(model, epoch):
     with torch.no_grad():
         for _ in range(int(numTestEpisodes/numBatches)):
             #print(f"\r testing progress {_}/{int(numTestEpisodes/numBatches)}", end='')
-            randomStartDate = random.randint(k, len(priceArraysTest[0]) - 1 - testInvestmentLength)
+            startDate = k
             randomSubsets = [random.sample(range(len(priceArraysTest)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
-            ys = [inflationsTest.T[randomStartDate:randomStartDate+testInvestmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, testInvestmentLength, numStocksInSubset)
+            ys = [inflationsTest.T[startDate:startDate+testInvestmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, testInvestmentLength, numStocksInSubset)
             ys = torch.Tensor(ys)
             ys = torch.cat([torch.ones(size=(numBatches, testInvestmentLength, 1)), ys], 2) # shape: (numBatches, testInvestmentLength, numStocksInSubset+1)
 
             actions = [torch.ones(size=(numBatches, numStocksInSubset + 1)).unsqueeze(-1)/(numStocksInSubset + 1)] # shape after for loop: (testInvestmentLength, numBatches, numStocksInSubset+1, 1) average assignment
-            for i in range(randomStartDate, randomStartDate + testInvestmentLength):
+            for i in range(startDate, startDate + testInvestmentLength):
                 encInput = [[priceSeries[i-k:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, priceSeriesLength: k, numFeatures)
                 encInput = torch.Tensor(encInput)
                 decInput = [[priceSeries[i-l:i] for priceSeries in priceArraysTest[randomSubset]] for randomSubset in randomSubsets] # shape: (numBatches, numStocksInSubset+1, localContextLength: l, numFeatures)
