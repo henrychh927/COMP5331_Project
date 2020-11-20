@@ -9,13 +9,13 @@ tranCostRate = 0.0025
 
 testInvestmentLength = 466 - k - 1 # len(testDates) - k - 1
 numTestEpisodes = numBatches*1
-eval_interval = 1
+eval_interval = 20
 
 lr = 1e-3
 weight_decay=1e-7
 
 # selection of model 
-MODEL = "MLP"             #LSTM, CNN, MLP, transformer  
+MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
 
 # transformer architecture
 tran_n_layer = 1
@@ -275,7 +275,7 @@ else:
 print(f"We are using {MODEL}")
 count_parameters(modelInstance)
 
-optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
+optimizer = optim.Adagrad(modelInstance.parameters())
 
 
 

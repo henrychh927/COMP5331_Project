@@ -1,2 +1,0 @@
-k,l,num_feature,numBatches,numStocksInSubset,trainInvestmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid 
- 30 5 4 128 11 40 1280000 0.0025 128 1 0.001 1e-07 MLP 1 2 12 50 2 50 50
