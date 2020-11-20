@@ -1,5 +1,6 @@
 bTrain = False
 model_dir = 'model_1.pkl'
+checkpoint_dir = ''
 k = 30                     #number of date in a batch
 l = 5                      #context window size
 num_feature = 4
@@ -282,10 +283,18 @@ optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_dec
 
 
 
+batchStart = 0
 if (bTrain):
+  if checkpoint_dir != '':
+      checkpoint = torch.load(checkpoint_dir)
+      modelInstance.load_state_dict(checkpoint['state_dict'])
+      optimizer.load_state_dict(checkpoint['optimizer'])
+      batchStart = checkpoint['batchIndex']
+      print('checkpoint loaded: '+checkpoint_dir)
+      print(batchStart)
   minLoss = 0    
         
-  for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
+  for batchIndex in tqdm(range(batchStart,int(numTrainEpisodes/numBatches))):
       modelInstance.train()
       #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
       randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - trainInvestmentLength)
@@ -311,6 +320,9 @@ if (bTrain):
           minLoss = totalLosses
           torch.save(modelInstance,save_folder+'/model_1.pkl')
           print('model saved: '+save_folder+'/model_1.pkl')
+          checkpoint = {'batchIndex': batchIndex+1, 'state_dict': modelInstance.state_dict(),'optimizer': optimizer.state_dict()}
+          torch.save(checkpoint,save_folder+'/model_1_checkpoint')
+          print('checkpoint saved: '+save_folder+'/model_1_checkpoint')
 
       optimizer.zero_grad()
       totalLosses.backward()
@@ -318,4 +330,6 @@ if (bTrain):
       
 else:
     modelInstance=torch.load(model_dir)
-    Evaluation(modelInstance, 1)
+    Evaluation(modelInstance, int(numTrainEpisodes/numBatches))
+	
+torch.save(modelInstance,save_folder+'/model_final.pkl')
