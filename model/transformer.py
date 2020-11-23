@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 class RATransformer(nn.Module):
-    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, rat_b=False, start_idx=0, dropout=0.1):
+    def __init__(self, num_layers, interval, d_feature, d_model, h, context_len, rat_b=False, relation_aware=True, context_attn=True, start_idx=0, dropout=0.1):
         # num_layers: number of layer for encoder and decoder
         # interval: time interval for the input sequence, such as 30 days
         # d_fearture: number of feature, which shoud be 4 ( open, highest, lowest, close)
@@ -24,8 +24,8 @@ class RATransformer(nn.Module):
 
         self.emb_enc = FeatureEmbeddingLayer(d_feature, d_model, start_idx, dropout)
         self.emb_dec = FeatureEmbeddingLayer(d_feature, d_model, start_idx, dropout)
-        self.encoder = Encoder(num_layers, d_model, h, context_len, dropout)
-        self.decoder = Decoder(num_layers, d_model, h, context_len, dropout)
+        self.encoder = Encoder(num_layers, d_model, h, context_len, dropout, context_attn, relation_aware)
+        self.decoder = Decoder(num_layers, d_model, h, context_len, dropout, context_attn, relation_aware)
         self.decision = DecisionLayer(d_model, d_feature, rat_b)
         
         for p in self.parameters():
@@ -33,19 +33,20 @@ class RATransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     
-    def forward(self, enc_input, dec_input, previous, enc_mask=None, dec_mask=None):
+    def forward(self, enc_input, dec_input, previous):
         # enc_input: batch_size, num_asset, time, n_feature   
         # dec_input: batch_size, num_asset, time, n_feature
         # previous: b, m, 1  t
         
-        # normalised price by the open price of the last day 
-#         enc_input = enc_input/enc_input[:,:,-1:,0:1]  # b, m, t, d_feature
+        # normalised price by the close price of the last day 
+        #enc_input = enc_input/enc_input[:,:,-1:,-1:]  # b, m, t, d_feature
         enc_input = self.emb_enc(enc_input)  # b, m, t, d_feature
-        enc_output = self.encoder(enc_input, enc_mask)
+        enc_output = self.encoder(enc_input)
         
-#         dec_input = dec_input/dec_input[:,:,-1:,0:1]  # b, m, t, d_feature
+        #dec_input = dec_input/dec_input[:,:,-1:,-1:]  # b, m, t, d_feature
         dec_input = self.emb_dec(dec_input)  # b, m, t, d_feature
-        dec_output = self.decoder(dec_input, enc_output, enc_mask, dec_mask)
+#         dec_mask = get_mask(dec_input)   # b, m, t, t
+        dec_output = self.decoder(dec_input, enc_output)
         out = self.decision(dec_output, previous) #  b, m, 1
         
         return out
@@ -67,7 +68,7 @@ class DecisionLayer(nn.Module):
         self.rat_b = rat_b
 
     def forward(self, x, previous):
-        # x: b, m, context_len, d_model
+        # x: b, m, 1, d_model
         # previous: b, m+1, 1
         b = x.size()[0]
         x = x[:,:,-1,:]
@@ -85,17 +86,13 @@ class DecisionLayer(nn.Module):
             return a
         
         money2 = self.money2.repeat(b,1,1) #b,1,1
-        money3 = self.money3.repeat(b,1,1) #b,1,1
         a_s = self.short_sale(x) #  b, m, 1
-        a_r = self.reinvestment(x) #  b, m, 1
-                
-        
         a_s = torch.cat([money2,a_s],1)  #  b, m+1, 1
-        a_r = torch.cat([money3,a_r],1)  #  b, m+1, 1
-        
-        
-        
         a_s = F.softmax(a_s, 1) #  b, m+1, 1
+        
+        money3 = self.money3.repeat(b,1,1) #b,1,1
+        a_r = self.reinvestment(x) #  b, m, 1
+        a_r = torch.cat([money3,a_r],1)  #  b, m+1, 1
         a_r = F.softmax(a_r, 1) #  b, m+1, 1
         
         #  b, m+1, 1
@@ -104,107 +101,117 @@ class DecisionLayer(nn.Module):
         
     
 class Encoder(nn.Module):
-    def __init__(self, num_layers, d_model, h, context_len, dropout):
+    def __init__(self, num_layers, d_model, h, context_len, dropout, context_attn, relation_aware):
         super(Encoder, self).__init__()
-        self.layers = nn.ModuleList([EncoderLayer(d_model, h, context_len, dropout) for _ in range(num_layers)])
+        self.layers = nn.ModuleList([EncoderLayer(d_model, h, context_len, dropout, context_attn, relation_aware) for _ in range(num_layers)])
         self.norm = LayerNorm(d_model)
         
-    def forward(self, x, mask=None):
-        y = x
+    def forward(self, x):
         for layer in self.layers:
-            y = layer(y, mask)
-        return self.norm(y)
+            x = layer(x)
+        return self.norm(x)
         
 class Decoder(nn.Module):
-    def __init__(self, num_layers, d_model, h, context_len,  dropout):
+    def __init__(self, num_layers, d_model, h, context_len,  dropout, context_attn, relation_aware):
         super(Decoder, self).__init__()
-        self.layers = nn.ModuleList([DecoderLayer(d_model, h, context_len, dropout) for _ in range(num_layers)])
+        self.layers = nn.ModuleList([DecoderLayer(d_model, h, context_len, dropout, context_attn, relation_aware) for _ in range(num_layers)])
         self.norm = LayerNorm(d_model)
 
-    def forward(self, x, memory, src_mask=None, tgt_mask=None):
-        y = x
+    def forward(self, x, memory, tgt_mask=None):
         for layer in self.layers:
-            y = layer(y, memory, src_mask, tgt_mask)
-        return self.norm(y)
+            x = layer(x, memory, tgt_mask)
+        return self.norm(x)
 
 
     
 class EncoderLayer(nn.Module):
-    def __init__(self, d_model, h, context_len, dropout):
+    def __init__(self, d_model, h, context_len, dropout, context_attn, relation_aware):
         super(EncoderLayer, self).__init__()
-        self.self_attn = MultiHeadAttention(d_model, h, context_len, dropout)
+        self.self_attn = MultiHeadAttention(d_model, h, context_len, dropout, context_attn)
         self.pw_ffn = PositionwiseFeedForward(d_model, dropout)
         self.sublayer =  nn.ModuleList([SublayerConnection(d_model, dropout) for _ in range(2)])
+        self.relation_aware= relation_aware
         
-    def forward(self, x, mask):
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
+    def forward(self, x):
+        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, relat_attn=self.relation_aware))
         return self.sublayer[1](x, self.pw_ffn)
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, d_model, h, context_len, dropout):
+    def __init__(self, d_model, h, context_len, dropout, context_attn, relation_aware):
         super(DecoderLayer, self).__init__()
-        self.self_attn = MultiHeadAttention(d_model, h, context_len, dropout)
-        self.src_attn = MultiHeadAttention(d_model, h, context_len, dropout)
+        self.self_attn = MultiHeadAttention(d_model, h, context_len, dropout, context_attn)
+        self.src_attn = MultiHeadAttention(d_model, h, context_len, dropout, context_attn)
         self.pw_ffn = PositionwiseFeedForward(d_model, dropout)
         self.sublayer = nn.ModuleList([SublayerConnection(d_model, dropout) for _ in range(3)])
+        self.relation_aware= relation_aware
 
-    def forward(self, x, memory, src_mask, tgt_mask):
-        m = memory
-        
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
-        # print('in1', x.shape)
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask, relat_attn=False))
-        # print('in2', x.shape)
+    def forward(self, x, m, tgt_mask):
+#         print('dec0', x.shape, m.shape)
+        x = self.sublayer[0](x, lambda i: self.self_attn(i, i, i, tgt_mask, relat_attn=self.relation_aware, padding=True)) 
+#         print('dec1', x.shape)
+        #x = x[:,:,-1:,:]
+        x = self.sublayer[1](x, lambda i: self.src_attn(i, m, m, relat_attn=False))
+#         print('dec2', x.shape)
         return self.sublayer[2](x, self.pw_ffn)
 
    
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, h, context_len, dropout):
+    def __init__(self, d_model, h, context_len, dropout, context_attn):
         super(MultiHeadAttention, self).__init__()
         assert d_model % h == 0
         self.d_k = d_model // h
         self.h = h
         self.context_len = context_len
         self.W_v = nn.Linear(d_model, d_model)
-        self.W_q = nn.Linear(d_model, d_model)
-        self.W_k = nn.Linear(d_model, d_model)
+        self.W_q = nn.Conv2d(d_model, d_model, (1,1), stride=1, padding=0, bias=True)#nn.Linear(d_model, d_model)
+        self.W_k = nn.Conv2d(d_model, d_model, (1,1), stride=1, padding=0, bias=True) #nn.Linear(d_model, d_model)
         self.fc = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(dropout)
+        self.context_attn = context_attn
         
-    def forward(self, query, key, value, mask, relat_attn=True):
+    def forward(self, query, key, value, mask=None, relat_attn=True, padding=True):
         # b, m, t, d_model
         b, m, t_q, d_model = query.size()
         b, m, t_v, d_model = value.size()
+#         print('query', query.shape)
         
-        query = self.W_q(query) #b, m, t, d_model
-        key = self.W_k(key)     #b, m, t, d_model
+        query = self.W_q(query.permute((0,3,1,2))).permute((0,2,3,1)) #b, m, t, d_model
+        key = self.W_k(key.permute((0,3,1,2))).permute((0,2,3,1) )    #b, m, t, d_model
         value = self.W_v(value) #b, m, t, d_model
+#         print('query', query.shape, 'key', key.shape)
+        if self.context_attn:
+            context_query = ContextAttention(query, self.context_len, padding).contiguous().view(b, m, -1, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
+            context_key = ContextAttention(key, self.context_len).contiguous().view(b, m, t_v, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
+        else:
+            context_query = query.contiguous().view(b, m, -1, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
+            context_key = key.contiguous().view(b, m, t_v, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
+            
+        value = value.contiguous().view(b, m, t_v, self.h, self.d_k).transpose(2, 3) #b, m, h, t, d_k
         
-
-        context_query = ContextAttention(query, self.context_len).contiguous().view(b, m, t_q, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
-        context_key = ContextAttention(key, self.context_len).contiguous().view(b, m, t_v, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
-        value = value.contiguous().view(b, m, t_v, self.h, self.d_k).transpose(2, 3) #b, m, t, d_model
-        
+#         print('context_query', context_query.shape, 'context_key', context_key.shape, 'value', value.shape)
         # scale-dot attention
         x, attn_weight = scaled_attention(context_query, context_key, value, mask)  #b, m, h, t_v,  d_k
         #x = x.transpose(1, 2).contiguous()().contiguous().view(b, m, -1, self.h * self.d_k)   
-        x = x.transpose(2, 3)
+        x = x.transpose(2, 3)   #b, m, t_v, h,  d_k
         if relat_attn:
             x, asset_weight = RelationAttentionLayer(x)
-        x = x.contiguous().view(b, m, -1, self.h * self.d_k)
-        return self.fc(x)
+        x = x.transpose(1, 0).contiguous().view(b, m, -1, self.h * self.d_k)
+        
+        x = self.fc(x)
+        return x
 
     
     
-def ContextAttention(x, context_length):
+def ContextAttention(x, context_length, padding=True):
     # x: b, m, t, d_model
     
     b, m, t, d_model = x.size()
-    padding_x = torch.zeros((b, m, context_length-1, d_model)).to(x.device)
-    x = torch.cat([padding_x, x], 2)
+    if padding:
+        padding_x = torch.zeros((b, m, context_length-1, d_model)).to(x.device)
+        x = torch.cat([padding_x, x], 2)
     
     attn_weight = torch.matmul(x[:,:,context_length-1:,:], x.transpose(-2, -1))/ math.sqrt(d_model)   #  x: b, m, t, t
     attn_weight_list = [F.softmax(attn_weight[:,:,i:i+1,i:i+context_length], dim = -1).permute((0, 1, 3, 2)) for i in range(attn_weight.size(-2))]  
@@ -317,4 +324,8 @@ def scaled_attention(query, key, value, mask=None):
     return attn_feature, attn_weight
 
 
-
+# def get_mask(x):
+#     b, m, t, d = x.size()
+#     x_mask = (torch.ones(b,1,1)==1)            
+#     x_mask = x_mask & ((torch.triu(torch.ones((1, t, t)), diagonal=1)==0).type_as(x_mask.data))   
+#     return x_mask.to(x.device)  
