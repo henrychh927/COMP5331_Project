@@ -1,16 +1,17 @@
 bTrain = False
-model_dir = 'model_1.pkl'
-checkpoint_dir = ''
+drive = '/content/drive/MyDrive/Colab Notebooks/'
+model_dir = drive+'/transformer/Nov21062056/model_bestEval.pkl'#drive+'transformer/model_1 (2).pkl'
+checkpoint_dir = ''#'/content/drive/MyDrive/Colab Notebooks/transformer/Nov21053944/model_1_checkpoint'
 k = 30                     #number of date in a batch
 l = 5                      #context window size
 num_feature = 4
-numBatches = 8#128          #batch size
+numBatches = 2#128          #batch size
 numStocksInSubset = 422     #num of stocks in a batch 
 trainInvestmentLength = 30      
 numTrainEpisodes = numBatches*10000
 tranCostRate = 0.0025
 
-testInvestmentLength = 466 - k - 1 # 184-k-1#466 - k - 1 # len(testDates) - k - 1
+testInvestmentLength = 466-k-1#184 - k - 1 # len(testDates) - k - 1
 numTestEpisodes = numBatches*1
 eval_interval = 1
 
@@ -18,7 +19,7 @@ lr = 1e-3
 weight_decay=1e-7
 
 # selection of model 
-MODEL = "MLP"             #LSTM, CNN, MLP, transformer  
+MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
 
 # transformer architecture
 tran_n_layer = 1
@@ -49,15 +50,16 @@ import time
 import torch
 import torch.optim as optim
 
-
+import sys
+sys.path.append(drive)
 from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
 
 #os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-device = torch.device('cuda 3:' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # %%
-df = pd.read_csv("whole_selected.csv")
+df = pd.read_csv(drive+'whole_selected.csv')
 df = df[["Ticker", "Date", "Open", "High", "Low", "Close"]].sort_values(by=["Ticker", "Date"])
 
 # %%
@@ -76,7 +78,7 @@ testDates = [date for date in validDates if date >= "2017" and date < "2019"]
 # print("Number of dates for testing: " + str(len(testDates)))
 
 
-save_folder = './' + MODEL + '/' + str(time.strftime('%b%d%H%M%S', time.localtime()))
+save_folder = drive + MODEL + '/' + str(time.strftime('%b%d%H%M%S', time.localtime()))
 os.makedirs(save_folder)
 print('output Path:', save_folder)
 save_file = save_folder + '/output.txt'
@@ -202,7 +204,7 @@ def evaluatePortfolios(ys, actions):
     return APVs, SRs, CRs
 
 # %%
-def Evaluation(model, epoch):
+def Evaluation(model, epoch, maxPortVal):
     APVs = []
     SRs = []
     CRs = []
@@ -232,11 +234,17 @@ def Evaluation(model, epoch):
         CRs += tempCRs
 
 
-
+        tmp = torch.mean(torch.tensor(APVs)).item()
         print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
         print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.std(torch.tensor(SRs)).item())
         print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.std(torch.tensor(CRs)).item())
         
+        if tmp > maxPortVal:
+            maxPortVal = tmp 
+            torch.save(modelInstance,save_folder+'/model_bestEval.pkl')
+            print('model saved: '+save_folder+'/model_bestEval.pkl')
+            print('max port val: '+str(maxPortVal))
+
         with open(save_file, 'a') as fw:
             print(epoch, torch.mean(torch.tensor(APVs)).item(),
                   torch.std(torch.tensor(APVs)).item(), 
@@ -244,6 +252,7 @@ def Evaluation(model, epoch):
                   torch.std(torch.tensor(SRs)).item(),
                   torch.mean(torch.tensor(CRs)).item(), 
                   torch.std(torch.tensor(CRs)).item(), file=fw)
+        return maxPortVal
 
     
 # %%
@@ -282,9 +291,9 @@ count_parameters(modelInstance)
 optimizer = optim.Adam(modelInstance.parameters(),lr=lr, weight_decay=weight_decay)
 
 
-
 batchStart = 0
 if (bTrain):
+  maxPortVal = 1.0
   if checkpoint_dir != '':
       checkpoint = torch.load(checkpoint_dir)
       modelInstance.load_state_dict(checkpoint['state_dict'])
@@ -298,7 +307,7 @@ if (bTrain):
       modelInstance.train()
       #print("\r traning progress " , str(batchIndex) , '/' , str(int(numTrainEpisodes/numBatches)), end='')
       randomStartDate = random.randint(k, len(priceArraysTrain[0]) - 1 - trainInvestmentLength)
-      randomSubsets = [[i for i in range(len(priceArraysTrain))] for j in range(numBatches)]#randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
+      randomSubsets = [[i for i in range(len(priceArraysTest))] for j in range(numBatches)]#randomSubsets = [random.sample(range(len(priceArraysTrain)), numStocksInSubset) for _ in range(numBatches)] # shape: (numBatches, numStocksInSubset)
 
       ys = [inflationsTrain.T[randomStartDate:randomStartDate+trainInvestmentLength].T[randomSubset].T for randomSubset in randomSubsets] # shape: (numBatches, trainInvestmentLength, numStocksInSubset)
       ys = torch.Tensor(ys)
@@ -316,6 +325,7 @@ if (bTrain):
       totalLosses, portVal = getTotalLosses(ys.to(device), actions.to(device))
       print(f"training loss: {totalLosses}")
       print(f"portfolio value: {portVal}")
+
       if totalLosses < minLoss:
           minLoss = totalLosses
           torch.save(modelInstance,save_folder+'/model_1.pkl')
@@ -327,9 +337,9 @@ if (bTrain):
       optimizer.zero_grad()
       totalLosses.backward()
       optimizer.step()
-      
+      if (batchIndex+1)%eval_interval==0:
+        print(f"\n testing {batchIndex+1}")
+        maxPortVal = Evaluation(modelInstance, batchIndex+1,maxPortVal)
 else:
     modelInstance=torch.load(model_dir)
-    Evaluation(modelInstance, int(numTrainEpisodes/numBatches))
-	
-torch.save(modelInstance,save_folder+'/model_final.pkl')
+    Evaluation(modelInstance, 1000000,1000000)
