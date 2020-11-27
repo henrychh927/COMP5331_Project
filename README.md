@@ -3,17 +3,16 @@
 This is the github repository containing all the code for this course project.
 
 ## File Description
-**model/baseline.py**: baseline models contain CNN, MLP, LSTM
-**model/transformer.py**: relation-aware model
-**model/model.py**: main file for model training
-**model/model.py**: code to reproduce non subset results with model saving
+**model/baseline.py**: baseline models contain CNN, MLP, LSTM \
+**model/transformer.py**: relation-aware model \
+**model/model.py**: main file for model training\
+**model/model.py**: code to reproduce non subset results with model saving\
 
 
 ## Model Setting
 There are a set of hyerparameter settings at the top of **model/model.py**
 
-**k**: number of date in a batch 
-
+**k**: number of date in a batch  \
 **l**: context window size
 **num_feature**: numer of feature for stock price. (open, high, low and close prices)
 **numBatches**: batch size
