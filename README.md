@@ -6,7 +6,7 @@ This is the github repository containing all the code for this course project.
 **model/baseline.py**: baseline models contain CNN, MLP, LSTM \
 **model/transformer.py**: relation-aware model \
 **model/model.py**: main file for model training\
-**model/model.py**: code to reproduce non subset results with model saving\
+**model/model.py**: code to reproduce non subset results with model saving
 
 
 ## Model Setting
@@ -32,12 +32,12 @@ There are a set of hyerparameter settings at the top of **model/model.py**
 **d_model**: hidden dimension of transformer\
 **context_attn**: add context attention\
 **relation_aware**: add relation aware layer\
-**rat_b**: remove leverage operation in decision making layer\
+**rat_b**: remove leverage operation in decision making layer
 
 
 ### LSTM Hyperparameters
 **lstm_hid**: hidden dimension of LSTM\
-**lstm_layer**: number of LSTM laye\
+**lstm_layer**: number of LSTM laye
 
 ### CNN Hyperparameters
 **cnn_hid**: hidden dimension of CNN
