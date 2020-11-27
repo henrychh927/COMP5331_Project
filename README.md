@@ -13,31 +13,31 @@ This is the github repository containing all the code for this course project.
 There are a set of hyerparameter settings at the top of **model/model.py**
 
 **k**: number of date in a batch  \
-**l**: context window size
-**num_feature**: numer of feature for stock price. (open, high, low and close prices)
-**numBatches**: batch size
-**numStocksInSubset**: number of stocks in a batch 
-**trainInvestmentLength**: observation window for training
-**numTrainEpisodes**: total number of examples for training
-**tranCostRate**: transaction cost rate
-**testInvestmentLength**: observation window for testing
-**numTestEpisodes**: total number of examples for testing
-**eval_interval**: evaluate the model for every eval_interval iterations during training
-**lr**: learning rate
-**weight_decay**: weight decay for optimizer
-**MODEL**: model selection (LSTM, CNN, MLP, transformer) 
+**l**: context window size\
+**num_feature**: numer of feature for stock price. (open, high, low and close prices)\
+**numBatches**: batch size\
+**numStocksInSubset**: number of stocks in a batch \
+**trainInvestmentLength**: observation window for training\
+**numTrainEpisodes**: total number of examples for training\
+**tranCostRate**: transaction cost rate\
+**testInvestmentLength**: observation window for testing\
+**numTestEpisodes**: total number of examples for testing\
+**eval_interval**: evaluate the model for every eval_interval iterations during training\
+**lr**: learning rate\
+**weight_decay**: weight decay for optimizer\
+**MODEL**: model selection (LSTM, CNN, MLP, transformer) \
 ### RAT Hyperparameters
-**tran_n_layer**: number of encoder and decoder layr
-**n_head** : number of head 
-**d_model**: hidden dimension of transformer
-**context_attn**: add context attention
-**relation_aware**: add relation aware layer
-**rat_b**: remove leverage operation in decision making layer
+**tran_n_layer**: number of encoder and decoder layr\
+**n_head** : number of head \
+**d_model**: hidden dimension of transformer\
+**context_attn**: add context attention\
+**relation_aware**: add relation aware layer\
+**rat_b**: remove leverage operation in decision making layer\
 
 
 ### LSTM Hyperparameters
-**lstm_hid**: hidden dimension of LSTM
-**lstm_layer**: number of LSTM laye
+**lstm_hid**: hidden dimension of LSTM\
+**lstm_layer**: number of LSTM laye\
 
 ### CNN Hyperparameters
 **cnn_hid**: hidden dimension of CNN
