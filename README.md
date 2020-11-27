@@ -6,8 +6,11 @@ This is the github repository containing all the code for this course project.
 **model/baseline.py**: baseline models contain CNN, MLP, LSTM \
 **model/transformer.py**: relation-aware model \
 **model/model.py**: main file for model training\
-**model/model.py**: code to reproduce non subset results with model saving
-
+**model/test_model.py**: code to reproduce non subset results with model saving\
+**data/stocks.xlsx**: spreadsheet containing stock names from different exchanges, mapping to yahoo finance tickers\
+**data/stock_list.csv**: input file for data retrieval\
+**data/SelectModel.py**: code to plot all timeseries data\
+**data/stock_list_selected.csv**: final list of stocks selected
 
 ## Model Setting
 There are a set of hyerparameter settings at the top of **model/model.py**
