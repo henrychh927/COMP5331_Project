@@ -242,7 +242,6 @@ def Evaluation(model, epoch):
             CRs += tempCRs
 
 
-        print(APVs)
         print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
         print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.std(torch.tensor(SRs)).item())
         print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.std(torch.tensor(CRs)).item())
