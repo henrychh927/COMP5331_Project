@@ -57,3 +57,5 @@ with open('.\Data\log.csv', 'wt')as fout:
 ### and this code will also write all data into csv files for all stocks.
 ### To run this code, you can put stock_list.csv in .\Pre_Data\,
 # and write "python FetchData.py" in the terminal. Then you will get 489 stocks' files in .\Data\.
+
+### Written by Guangyuan HAO
