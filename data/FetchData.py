@@ -54,6 +54,6 @@ with open('.\Data\log.csv', 'wt')as fout:
 
 ### This code is to get all finiancial data of companies in stock_list.csv
 # from 2010-1-1 to today (for our data, today is 2020-10-23 since we collected data in that day)
-### and this code will also write all data into csv files for all stocks.
+# and this code will also write all data into csv files for all stocks.
 ### To run this code, you can put stock_list.csv in .\Pre_Data\,
 # and write "python FetchData.py" in the terminal. Then you will get 489 stocks' files in .\Data\.
