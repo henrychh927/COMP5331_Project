@@ -53,7 +53,7 @@ python model.py
 ```
 The training approximately takes 5 hours for 1000 iterations with a GTX 1080  
 
-Examplar Output
+Example Output During Training
 
 ```
 lr 0.01
