@@ -50,6 +50,7 @@ There are a set of hyerparameter settings at the top of **model/model.py**
 
 
 ## Model Running
+Pease first download the data file from https://hkustconnect-my.sharepoint.com/:f:/g/personal/ysunbc_connect_ust_hk/EmHCmjdkiTNMnr7gFl32WyEBBvs9M7WUUhdI0kF9omodYg?e=qgbzAX and place it in the **model/** \
 After setting the hypaparameters in **model/model.py**, to trian the model, please run the command
 ```
 python model.py
