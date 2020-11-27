@@ -70,7 +70,9 @@ rat_b False
 output Path: ./Nov27122301
 We are using transformer
 Adam
-  0%|▏                                                | 19/10000 [03:34<31:04:20, 11.21s/it]training loss: -0.31551554799079895
+  0%|▏                                                | 19/10000 [03:34<31:04:20, 11.21s/it]training 
+  
+  loss: -0.31551554799079895
 
  testing 20
 
