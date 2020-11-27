@@ -11,11 +11,14 @@ testInvestmentLength = 466 - k - 1 # len(testDates) - k - 1
 numTestEpisodes = numBatches*1
 eval_interval = 20
 
-lr = 1e-3
+lr = 1e-2
 weight_decay=1e-7
 
 # selection of model 
 MODEL = "transformer"             #LSTM, CNN, MLP, transformer  
+context_attn = True
+relation_aware = True
+rat_b = False
 
 # transformer architecture
 tran_n_layer = 1
@@ -34,6 +37,12 @@ mlp_hid = 50
 
 
 
+print('lr', lr)
+print('relation_aware', relation_aware)
+print('context_attn', context_attn)
+print('rat_b', rat_b)
+
+
 # %%
 import pandas as pd
 import numpy as np
@@ -45,13 +54,14 @@ import time
 
 import torch
 import torch.optim as optim
-
+ 
 
 from transformer import RATransformer
 from baseline import CNN, LSTM, MLP
+from torch_optimizer import RAdam
 
 #os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
 
 # %%
 df = pd.read_csv("whole_selected.csv")
@@ -81,7 +91,7 @@ config_file = save_folder + '/config.txt'
 
 
 with open(config_file, 'a') as fw:
-           print('k,l,num_feature,numBatches,numStocksInSubset,trainInvestmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid \n',
+           print('k,l,num_feature,numBatches,numStocksInSubset,trainInvestmentLength,numTrainEpisodes,tranCostRate,numTestEpisodes,eval_interval,lr, weight_decay,MODEL,tran_n_layer,n_head,d_model,lstm_hid ,lstm_layer ,cnn_hid ,mlp_hid, context_attn, relation_aware, rat_b \n',
               k,
               l ,
               num_feature,
@@ -101,7 +111,11 @@ with open(config_file, 'a') as fw:
               lstm_hid ,
               lstm_layer ,
               cnn_hid ,
-              mlp_hid , file=fw)
+              mlp_hid ,
+              context_attn ,
+                relation_aware,
+                 rat_b,
+                 file=fw)
             
             
 
@@ -228,7 +242,7 @@ def Evaluation(model, epoch):
             CRs += tempCRs
 
 
-
+        print(APVs)
         print("\nAPVs mean:", torch.mean(torch.tensor(APVs)).item(), ' std:', torch.std(torch.tensor(APVs)).item())
         print("SRs mean:", torch.mean(torch.tensor(SRs)).item(), ' std:', torch.std(torch.tensor(SRs)).item())
         print("CRs mean:", torch.mean(torch.tensor(CRs)).item(), ' std:', torch.std(torch.tensor(CRs)).item())
@@ -262,7 +276,9 @@ def count_parameters(model):
 
 # %%
 if MODEL=="transformer":
-    modelInstance = RATransformer(tran_n_layer, k, num_feature, d_model, n_head, l).to(device)
+    modelInstance = RATransformer(tran_n_layer, k, num_feature, d_model, n_head, l, 
+                                 context_attn=context_attn, rat_b=rat_b,
+                                  relation_aware=relation_aware).to(device)
 elif MODEL=="CNN":
     modelInstance = CNN(num_feature, cnn_hid).to(device)
 elif MODEL=="LSTM":
@@ -273,11 +289,13 @@ else:
     print("invalid model selection")
     
 print(f"We are using {MODEL}")
-count_parameters(modelInstance)
+# count_parameters(modelInstance)
 
-optimizer = optim.Adagrad(modelInstance.parameters())
+# print('RAdam')
+# optimizer = RAdam(modelInstance.parameters(), lr=lr, weight_decay=weight_decay)
 
-
+print('Adam')
+optimizer = optim.Adam(modelInstance.parameters(), lr=lr, weight_decay=weight_decay)
 
 
     
@@ -306,6 +324,7 @@ for batchIndex in tqdm(range(int(numTrainEpisodes/numBatches))):
 
     optimizer.zero_grad()
     totalLosses.backward()
+    torch.nn.utils.clip_grad_norm_(modelInstance.parameters(), 1.0)
     optimizer.step()
     
     if (batchIndex+1)%eval_interval==0:
