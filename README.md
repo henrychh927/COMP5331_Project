@@ -3,7 +3,7 @@
 This is the github repository containing all the code for this course project.
 
 ## File Description
-**model** folder contains all the files for model training and baseline training. while **data** folder contains the code for data collection and preprocessing. \
+**model** folder contains all the files for model training and baseline training. while **data** folder contains the code for data collection and preprocessing. \ \
 **model/baseline.py**: baseline models contain CNN, MLP, LSTM \
 **model/transformer.py**: relation-aware model \
 **model/model.py**: main file for model training\
